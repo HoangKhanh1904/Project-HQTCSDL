@@ -1,1 +1,274 @@
-# Project-HQTCSDL
+# SwiftletCare 🐦
+
+**Bài tập lớn môn Hệ quản trị cơ sở dữ liệu (HQTCSDL)**  
+**Đề tài:** Ứng dụng quản lý và giám sát nhà yến (SwiftletCare)  
+**Nhóm:** 4 thành viên
+
+> **Lưu ý về phạm vi:** Đây là ứng dụng phục vụ bài tập lớn **SQL Server và T-SQL**. Dữ liệu nhiệt độ, độ ẩm, lượt chim ra/vào và cảnh báo được **mô phỏng hoặc nhập thủ công**. Nhóm **không bắt buộc** triển khai cảm biến IoT, camera hay AI thực tế.
+
+## 1. Mục tiêu
+
+- Xây dựng ứng dụng web quản lý thông tin nhà yến, khu vực, thiết bị và dữ liệu giám sát.
+- Thiết kế cơ sở dữ liệu quan hệ trên **Microsoft SQL Server** với khóa chính, khóa ngoại và các ràng buộc toàn vẹn.
+- Vận dụng **T-SQL**: truy vấn nhiều bảng, `VIEW`, `STORED PROCEDURE`, `FUNCTION`, `TRIGGER`, `TRANSACTION`, `INDEX` và phân quyền (theo yêu cầu giảng viên).
+- Kết nối ứng dụng **Python Flask** với SQL Server, hiển thị và thao tác dữ liệu trên giao diện web.
+- Kiểm thử, trình diễn quy trình nghiệp vụ và giải thích được cách hoạt động của cơ sở dữ liệu.
+
+## 2. Công nghệ sử dụng
+
+| Thành phần | Công nghệ | Vai trò |
+| --- | --- | --- |
+| Backend | Python 3, Flask | Xử lý yêu cầu, định tuyến và nghiệp vụ |
+| Frontend | HTML5, CSS3, JavaScript | Giao diện người dùng |
+| Template | Jinja2 (đi kèm Flask) | Hiển thị dữ liệu từ backend |
+| Database | Microsoft SQL Server | Lưu trữ dữ liệu quan hệ |
+| Ngôn ngữ DB | T-SQL | Truy vấn và xử lý nghiệp vụ tại CSDL |
+| Kết nối DB | `pyodbc`, Microsoft ODBC Driver for SQL Server | Kết nối Python với SQL Server |
+| Công cụ DB | SQL Server Management Studio (SSMS) | Tạo và kiểm thử database |
+| Làm việc nhóm | Git, GitHub | Quản lý phiên bản và review code |
+| Tùy chọn | Bootstrap, Chart.js, Postman | Giao diện, biểu đồ, kiểm thử API |
+
+## 3. Phạm vi chức năng dự kiến
+
+| Module | Chức năng | Gợi ý nội dung T-SQL |
+| --- | --- | --- |
+| Tài khoản & nhà yến | Quản lý tài khoản, nhà yến và khu vực | PK/FK, `UNIQUE`, CRUD |
+| Thiết bị | Quản lý thiết bị và trạng thái | Quan hệ 1-n, `CHECK`, `DEFAULT` |
+| Giám sát môi trường | Lưu và xem nhiệt độ, độ ẩm, ánh sáng mô phỏng | Procedure, View, Index |
+| Điều khiển mô phỏng | Cấu hình ngưỡng, lưu lịch sử thao tác | Procedure, Transaction, Trigger |
+| Theo dõi chim | Ghi nhận lượt vào/ra, tổng hợp theo ngày | Function, `GROUP BY`, CTE |
+| Cảnh báo | Phát hiện dữ liệu vượt ngưỡng, ghi nhận xử lý | Procedure, View, Trigger phù hợp |
+| Báo cáo | Thống kê dữ liệu theo ngày/tháng/nhà yến | JOIN, Window Function, Index |
+
+**Ưu tiên MVP:** quản lý nhà yến/khu vực/thiết bị, dữ liệu môi trường mô phỏng, lịch sử điều khiển, lượt chim vào/ra và dashboard cơ bản. Các tính năng nâng cao chỉ triển khai khi phần cốt lõi đã ổn định.
+
+## 4. Kiến trúc tổng quan
+
+```text
+Trình duyệt (HTML/CSS/JavaScript)
+              |
+              v
+      Python Flask + Jinja2
+              |
+            pyodbc
+              |
+              v
+       Microsoft SQL Server
+    Tables / Views / Procedures
+    Functions / Triggers / Indexes
+```
+
+Dữ liệu mô phỏng có thể được tạo bằng SQL script hoặc một chương trình Python riêng. Ứng dụng phải thể hiện rõ vai trò của **SQL Server/T-SQL**, không chỉ lưu dữ liệu và xử lý mọi nghiệp vụ ở Python.
+
+## 5. Cấu trúc thư mục dự kiến
+
+> **Đây là cấu trúc đề xuất, chưa có nghĩa tất cả file/thư mục đã được tạo.** Nhóm sẽ cập nhật khi triển khai thực tế.
+
+```text
+Project-HQTCSDL/
+├── README.md
+├── requirements.txt            # Danh sách thư viện Python (sẽ tạo)
+├── .env.example                # Mẫu cấu hình, không chứa mật khẩu thật
+├── app.py                      # Điểm khởi chạy Flask (dự kiến)
+├── db.py                       # Kết nối SQL Server (dự kiến)
+├── routes/                     # Các route theo chức năng
+├── templates/                  # Giao diện HTML/Jinja2
+├── static/
+│   ├── css/
+│   └── js/
+├── database/
+│   ├── 01_schema.sql
+│   ├── 02_seed.sql
+│   ├── 03_views.sql
+│   ├── 04_functions.sql
+│   ├── 05_procedures.sql
+│   ├── 06_triggers.sql
+│   ├── 07_indexes.sql
+│   └── tests/
+├── simulator/                  # Sinh dữ liệu giả lập (nếu có)
+└── docs/                       # ERD, mô tả bảng, kiểm thử, báo cáo
+```
+
+## 6. Chuẩn bị môi trường
+
+### 6.1. Cài phần mềm
+
+1. **Python 3**: <https://www.python.org/downloads/>
+2. **SQL Server** (Developer hoặc Express phù hợp): <https://www.microsoft.com/en-us/sql-server/sql-server-downloads>
+3. **SSMS**: <https://learn.microsoft.com/en-us/ssms/install/install>
+4. **Microsoft ODBC Driver for SQL Server**: <https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server>
+5. **Git**: <https://git-scm.com/downloads>
+6. **VS Code** (khuyến nghị): <https://code.visualstudio.com/>
+
+### 6.2. Clone repository
+
+```bash
+git clone https://github.com/HoangKhanh1904/Project-HQTCSDL.git
+cd Project-HQTCSDL
+```
+
+### 6.3. Tạo môi trường Python
+
+**Windows (PowerShell):**
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+**macOS/Linux:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Khi đã có `requirements.txt`, cài bằng:
+
+```bash
+pip install -r requirements.txt
+```
+
+Nếu chưa tạo file đó, các thư viện tối thiểu dự kiến là:
+
+```bash
+pip install flask pyodbc python-dotenv
+```
+
+### 6.4. Thiết lập SQL Server
+
+1. Mở SSMS, kết nối đến SQL Server trên máy.
+2. Khi nhóm hoàn thiện thư mục `database/`, chạy các script theo thứ tự được ghi trong tài liệu (tạo schema trước, sau đó seed data và các đối tượng T-SQL).
+3. Tạo file `.env` cục bộ theo `.env.example` **sau khi file mẫu được bổ sung**; điền tên server, database và kiểu xác thực phù hợp.
+4. Không commit `.env`, mật khẩu hoặc chuỗi kết nối chứa thông tin bí mật.
+
+**Lưu ý:** Tên SQL Server instance khác nhau tùy máy, ví dụ `localhost`, `localhost\\SQLEXPRESS` hoặc tên máy. Driver ODBC phải được cài trên máy chạy Flask.
+
+### 6.5. Chạy ứng dụng
+
+Sau khi thành viên Backend tạo `app.py` và cấu hình kết nối, nhóm sẽ thống nhất lệnh chạy. Nếu sử dụng cấu trúc Flask dự kiến ở trên, có thể chạy:
+
+```bash
+flask --app app run --debug
+```
+
+Sau đó mở <http://127.0.0.1:5000>. **Hiện tại đây là hướng dẫn dự kiến, không phải cam kết ứng dụng đã chạy được.** Chỉ dùng chế độ debug khi phát triển trên máy cá nhân.
+
+## 7. Phân công nhóm 4 người
+
+| Thành viên | Vai trò chính | Công việc và sản phẩm bàn giao |
+| --- | --- | --- |
+| **TV1 – Database Lead** | Thiết kế dữ liệu | ERD, chuẩn hóa, bảng, PK/FK, constraints, seed data, tài liệu cấu trúc DB |
+| **TV2 – Backend Lead** | Python Flask | Kết nối `pyodbc`, route/API, CRUD, Stored Procedure, Transaction |
+| **TV3 – Frontend Lead** | HTML/CSS/JS | Layout, form, bảng dữ liệu, dashboard, tích hợp route; hỗ trợ View/truy vấn |
+| **TV4 – Analytics & QA** | Mô phỏng và kiểm thử | Sinh dữ liệu, thống kê chim, cảnh báo, Function/CTE/Index, test case, báo cáo |
+
+**Nguyên tắc:** Mỗi thành viên cần hiểu ERD, biết chạy script SQL và trình bày được ít nhất một phần T-SQL mình tham gia thực hiện. Cả nhóm cùng review và kiểm thử tích hợp.
+
+## 8. Quy trình làm việc trên GitHub
+
+1. Trước khi code, cập nhật nhánh `main`:
+
+   ```bash
+   git checkout main
+   git pull origin main
+   ```
+
+2. Tạo nhánh mới theo công việc:
+
+   ```bash
+   git checkout -b feature/farm-management
+   ```
+
+3. Chỉ thêm những file liên quan, kiểm tra trước khi commit:
+
+   ```bash
+   git status
+   git add <ten-file-hoac-thu-muc>
+   git commit -m "feat: add farm management"
+   git push -u origin feature/farm-management
+   ```
+
+4. Trên GitHub, tạo **Pull Request** từ nhánh tính năng vào `main`, mô tả thay đổi và nhờ ít nhất một thành viên review.
+5. Không tự ý `force push` lên `main`. Khi có xung đột (merge conflict), trao đổi với người phụ trách phần code liên quan.
+
+**Quy ước commit gợi ý:**
+
+- `feat:` thêm chức năng
+- `fix:` sửa lỗi
+- `docs:` cập nhật tài liệu
+- `db:` thay đổi database/T-SQL
+- `test:` thêm hoặc sửa kiểm thử
+- `refactor:` cải thiện code mà không đổi chức năng
+
+## 9. Quy ước SQL Server và T-SQL
+
+- Tên bảng, cột và khóa phải nhất quán; thống nhất cách đặt tên trước khi triển khai.
+- Mỗi bảng có khóa chính phù hợp; khai báo khóa ngoại và các ràng buộc `NOT NULL`, `UNIQUE`, `CHECK`, `DEFAULT` khi cần.
+- Ưu tiên kiểu dữ liệu phù hợp, ví dụ `DATETIME2` cho thời gian, `DECIMAL` cho giá trị đo cần độ chính xác xác định.
+- Dùng tham số khi truy vấn từ Python; **không ghép chuỗi SQL từ dữ liệu người dùng**.
+- Dùng `STORED PROCEDURE` cho nghiệp vụ có nhiều bước; `TRANSACTION` khi cần đảm bảo tính nguyên tử.
+- Chỉ dùng `TRIGGER` cho trường hợp có lý do rõ ràng (ví dụ audit), tránh logic ẩn khó kiểm thử.
+- Tạo `INDEX` dựa trên truy vấn thực tế; lưu Execution Plan hoặc kết quả đo khi báo cáo tối ưu.
+- Mọi thay đổi schema và đối tượng T-SQL phải được lưu thành file `.sql` và đưa vào Git.
+- Không lưu mật khẩu dạng văn bản thuần trong database; khi triển khai đăng nhập cần băm mật khẩu phù hợp.
+
+## 10. Kế hoạch triển khai tham khảo (6 tuần)
+
+| Tuần | Mục tiêu |
+| --- | --- |
+| 1 | Chốt yêu cầu, ERD, phân công, thiết lập GitHub và môi trường |
+| 2 | Tạo bảng/constraints/seed, kết nối Flask–SQL Server, giao diện khung |
+| 3 | CRUD nhà yến/khu vực/thiết bị, Stored Procedure cơ bản |
+| 4 | Dữ liệu môi trường mô phỏng, dashboard, lượt chim vào/ra |
+| 5 | Điều khiển mô phỏng, cảnh báo, View/Function/Trigger/Transaction, báo cáo |
+| 6 | Kiểm thử, tối ưu Index, hoàn thiện tài liệu và luyện demo |
+
+## 11. Checklist trước khi nộp
+
+### Database & T-SQL
+
+- [ ] ERD và tài liệu mô tả bảng, quan hệ, kiểu dữ liệu
+- [ ] Script tạo database và bảng chạy được trên máy khác
+- [ ] Dữ liệu mẫu đủ để demo các tình huống
+- [ ] Ràng buộc PK, FK, UNIQUE, CHECK, DEFAULT được kiểm thử
+- [ ] Có Stored Procedure, Function, View, Trigger theo yêu cầu môn học
+- [ ] Có minh họa Transaction và xử lý rollback
+- [ ] Có truy vấn thống kê nhiều bảng (JOIN, GROUP BY, CTE hoặc Window Function)
+- [ ] Có Index và giải thích vì sao sử dụng
+- [ ] Có phương án backup/restore và phân quyền (nếu giảng viên yêu cầu)
+
+### Ứng dụng & bàn giao
+
+- [ ] Flask kết nối SQL Server ổn định
+- [ ] Các chức năng CRUD hoạt động
+- [ ] Dashboard hiển thị dữ liệu mô phỏng đúng
+- [ ] Có xử lý lỗi đầu vào và thông báo lỗi dễ hiểu
+- [ ] Có hướng dẫn cài đặt và cấu hình thực tế
+- [ ] Không đưa mật khẩu, `.env`, `.venv` vào Git
+- [ ] Có kịch bản demo và ảnh chụp kết quả kiểm thử
+- [ ] Cả 4 thành viên nắm được phần mình phụ trách
+
+## 12. Kịch bản demo gợi ý
+
+1. Tạo nhà yến, khu vực và thiết bị trên giao diện.
+2. Thử nhập dữ liệu sai để minh họa ràng buộc CSDL.
+3. Sinh dữ liệu cảm biến mô phỏng và hiển thị trên dashboard.
+4. Thay đổi ngưỡng môi trường, lưu lịch sử điều khiển.
+5. Xem cảnh báo khi giá trị mô phỏng vượt ngưỡng.
+6. Xem thống kê lượt chim ra/vào theo ngày.
+7. Mở SSMS, thực thi Stored Procedure/View/Function tương ứng.
+8. Minh họa Transaction rollback và so sánh truy vấn có/không có Index.
+
+## 13. Lưu ý bảo mật và làm việc nhóm
+
+- Thêm `.env`, `.venv/`, `__pycache__/`, `*.pyc` và các file bí mật vào `.gitignore`.
+- Không chia sẻ tài khoản SQL Server có quyền quản trị cho mọi tác vụ của ứng dụng.
+- Kiểm tra dữ liệu đầu vào ở cả backend và database.
+- Thống nhất cách đặt tên, tránh sửa trực tiếp cùng một file trên `main`.
+- Cập nhật README khi quy trình cài đặt, cấu trúc thư mục hoặc phân công thay đổi.
+
+---
+
+**Repository:** <https://github.com/HoangKhanh1904/Project-HQTCSDL>  
+**Trạng thái:** Đang xây dựng — các phần chưa triển khai được ghi là *dự kiến* trong tài liệu.
