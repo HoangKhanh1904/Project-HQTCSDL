@@ -272,3 +272,221 @@ Sau đó mở <http://127.0.0.1:5000>. **Hiện tại đây là hướng dẫn d
 
 **Repository:** <https://github.com/HoangKhanh1904/Project-HQTCSDL>  
 **Trạng thái:** Đang xây dựng — các phần chưa triển khai được ghi là *dự kiến* trong tài liệu.
+
+## 6. Hướng dẫn thiết lập môi trường với Docker
+
+### 6.1. Yêu cầu phần mềm
+
+Mỗi thành viên cần cài đặt:
+
+- Docker Desktop (Linux containers, WSL2 trên Windows).
+- SQL Server Management Studio (SSMS).
+- Python 3.
+- Microsoft ODBC Driver 18 for SQL Server.
+- Git và VS Code.
+
+**Lưu ý:** Không cần cài SQL Server Database Engine trực tiếp trên Windows. SQL Server sẽ chạy trong Docker Container.
+
+### 6.2. Clone repository
+
+```bash
+git clone https://github.com/HoangKhanh1904/Project-HQTCSDL.git
+cd Project-HQTCSDL
+```
+
+### 6.3. Tạo cấu hình Docker Compose
+
+Tạo file `compose.yaml` tại thư mục gốc:
+
+```yaml
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: swiftletcare-sqlserver
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    ports:
+      - "127.0.0.1:14330:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+
+volumes:
+  sqlserver_data:
+```
+
+### 6.4. Thiết lập biến môi trường
+
+Tạo file `.env` tại thư mục chứa `compose.yaml`:
+
+```dotenv
+MSSQL_SA_PASSWORD=ThayBangMatKhauManh_2026!
+```
+
+Thay mật khẩu mẫu bằng mật khẩu riêng đủ mạnh.
+
+Tạo `.env.example` để chia sẻ mẫu cấu hình:
+
+```dotenv
+MSSQL_SA_PASSWORD=YOUR_STRONG_PASSWORD_HERE
+```
+
+Đảm bảo `.gitignore` chứa:
+
+```gitignore
+.env
+.venv/
+__pycache__/
+*.pyc
+```
+
+Không commit `.env` lên GitHub.
+
+### 6.5. Khởi động SQL Server
+
+Mở Docker Desktop và đảm bảo Docker Engine đang chạy.
+
+Tại thư mục chứa `compose.yaml`, chạy:
+
+```powershell
+docker compose up -d
+docker compose ps
+docker compose logs --tail=50 sqlserver
+```
+
+Chờ đến khi log xuất hiện thông báo SQL Server sẵn sàng nhận kết nối.
+
+### 6.6. Kết nối SQL Server bằng SSMS
+
+Sử dụng các thông số:
+
+| Trường | Giá trị |
+| --- | --- |
+| Server name | `127.0.0.1,14330` |
+| Authentication | SQL Server Authentication |
+| Login | `sa` |
+| Password | Mật khẩu trong `.env` |
+| Trust server certificate | Bật cho môi trường local |
+
+Sau khi kết nối, chạy:
+
+```sql
+IF DB_ID(N'SwiftletCare') IS NULL
+    CREATE DATABASE SwiftletCare;
+GO
+
+USE SwiftletCare;
+GO
+
+SELECT DB_NAME() AS CurrentDatabase;
+```
+
+Kết quả mong đợi: `SwiftletCare`.
+
+### 6.7. Thiết lập Python
+
+Tạo môi trường ảo:
+
+```powershell
+python -m venv .venv
+```
+
+Cài các thư viện:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install flask pyodbc python-dotenv
+```
+
+Khi nhóm có `requirements.txt`, ưu tiên cài đặt bằng file đó.
+
+### 6.8. Kiểm tra kết nối Python – SQL Server
+
+Tạo file `test_connection.py`:
+
+```python
+import os
+import pyodbc
+from dotenv import load_dotenv
+
+load_dotenv()
+
+connection_string = (
+    "DRIVER={ODBC Driver 18 for SQL Server};"
+    "SERVER=127.0.0.1,14330;"
+    "DATABASE=SwiftletCare;"
+    "UID=sa;"
+    f"PWD={os.environ['MSSQL_SA_PASSWORD']};"
+    "Encrypt=yes;"
+    "TrustServerCertificate=yes;"
+)
+
+with pyodbc.connect(connection_string, timeout=5) as conn:
+    cursor = conn.cursor()
+    cursor.execute("SELECT DB_NAME()")
+    print("Connected to:", cursor.fetchone()[0])
+```
+
+Chạy:
+
+```powershell
+.\.venv\Scripts\python.exe test_connection.py
+```
+
+Kết quả mong đợi:
+
+```text
+Connected to: SwiftletCare
+```
+
+Tài khoản `sa` chỉ dùng cho thiết lập và kiểm tra ban đầu. Khi phát triển ứng dụng, nên tạo tài khoản SQL có quyền giới hạn cho Flask.
+
+### 6.9. Các lệnh Docker thường dùng
+
+| Mục đích | Lệnh |
+| --- | --- |
+| Khởi động | `docker compose up -d` |
+| Xem trạng thái | `docker compose ps` |
+| Xem log | `docker compose logs -f sqlserver` |
+| Dừng | `docker compose stop` |
+| Khởi động lại | `docker compose start` |
+| Xóa container, giữ volume | `docker compose down` |
+
+**Cảnh báo:** Không dùng `docker compose down -v` nếu muốn giữ dữ liệu trong Docker Volume.
+
+### 6.10. Đồng bộ Database giữa các thành viên
+
+Mỗi thành viên chạy một SQL Server Container trên máy cá nhân.
+
+Để đồng bộ cấu trúc Database, nhóm cần:
+
+1. Lưu các thay đổi schema, Stored Procedure, Function, Trigger và View thành SQL scripts.
+2. Commit các script lên GitHub.
+3. Pull thay đổi mới trước khi chạy script.
+4. Thực hiện các script theo đúng thứ tự.
+5. Không giả định Docker tự động đồng bộ dữ liệu giữa các máy.
+
+### 6.11. Xử lý lỗi thường gặp
+
+**Docker daemon không hoạt động:** Mở Docker Desktop, kiểm tra Linux Engine và chạy `docker info`.
+
+**Không kết nối được SSMS:** Kiểm tra `docker compose ps`, cổng `14330`, tài khoản `sa` và mật khẩu.
+
+**Python báo thiếu ODBC Driver:** Cài Microsoft ODBC Driver 18 và kiểm tra tên driver trong chuỗi kết nối.
+
+**Container tự thoát:** Kiểm tra `docker compose logs sqlserver`, RAM khả dụng và mật khẩu.
+
+**Đổi mật khẩu `.env` nhưng mật khẩu SQL Server không đổi:** Mật khẩu `sa` đã được lưu trong Database hiện có. Thay đổi biến môi trường không tự động thay đổi mật khẩu của Database đã khởi tạo.
+
+### 6.12. Chạy ứng dụng Flask
+
+Sau khi nhóm hoàn thiện `app.py`, có thể chạy:
+
+```powershell
+.\.venv\Scripts\python.exe -m flask --app app run --debug
+```
+
+Truy cập `http://127.0.0.1:5000`.
+
+Đây là lệnh dự kiến; chỉ sử dụng khi ứng dụng Flask đã được triển khai. Chế độ debug chỉ dành cho phát triển cục bộ.
