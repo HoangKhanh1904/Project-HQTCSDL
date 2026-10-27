@@ -77,25 +77,50 @@ foreach ($entry in $businessTrees) {
     }
 }
 
-$expectedTables = @('Users', 'SwiftletHouses', 'Zones', 'Devices', 'SensorReadings', 'EnvironmentThresholds', 'Alerts', 'AlertActions', 'ControlLogs')
-if ($tables.Count -ne 9) { throw "Expected nine business tables; got $($tables.Count)." }
+$expectedTables = @('Users', 'SwiftletHouses', 'Zones', 'Devices', 'SensorReadings', 'EnvironmentThresholds', 'Alerts', 'AlertActions', 'ControlLogs',
+    'BirdMovementEvents', 'DeviceControlSettings', 'SimulatedSystemEvents')
+if ($tables.Count -ne 12) { throw "Expected nine baseline plus three extension tables; got $($tables.Count)." }
 foreach ($name in $expectedTables) {
     if (-not $tables.ContainsKey($name)) { throw "Missing table: $name" }
 }
-if ($primaryKeyCount -ne 9 -or $uniqueCount -ne 3 -or $foreignKeyCount -ne 11 -or $checkCount -ne 15) {
+if ($primaryKeyCount -ne 12 -or $uniqueCount -ne 3 -or $foreignKeyCount -ne 17 -or $checkCount -ne 26) {
     throw "Unexpected constraint counts: PK=$primaryKeyCount UNIQUE=$uniqueCount FK=$foreignKeyCount CHECK=$checkCount"
 }
 $expectedProcedures = @('sp_AcknowledgeAlert', 'sp_GetEnvironmentThreshold', 'sp_UpdateEnvironmentThreshold',
     'sp_InsertSensorReading', 'sp_TransitionAlert', 'sp_ResolveAlert', 'sp_ReopenAlert', 'sp_CreateEnvironmentThreshold',
-    'sp_GetLatestSensorReadings', 'sp_GetSensorHistory', 'sp_GetUnresolvedAlerts', 'sp_GetZoneDashboard')
+    'sp_GetLatestSensorReadings', 'sp_GetSensorHistory', 'sp_GetUnresolvedAlerts', 'sp_GetZoneDashboard',
+    'sp_InsertBirdMovement', 'sp_GetBirdMovementDaily', 'sp_GetEnvironmentMetrics',
+    'sp_InsertSimulatedSystemEvent', 'sp_UpdateSimulatedEventStatus', 'sp_GetSimulatedSystemEvents', 'sp_SimulateDeviceControl')
 if ($procedures.Count -ne $expectedProcedures.Count -or @($procedures | Select-Object -Unique).Count -ne $expectedProcedures.Count) {
-    throw 'Expected exactly twelve distinct application procedure definitions.'
+    throw 'Expected exactly nineteen distinct application procedure definitions.'
 }
 foreach ($name in $expectedProcedures) {
     if ($procedures -cnotcontains $name) { throw "Missing procedure: $name" }
 }
 
+# Parse literal additive ALTER batches too: migrations intentionally use dynamic
+# SQL so SQL Server does not bind newly added columns before executing the DDL.
+$migrationTrees = @()
 foreach ($entry in $businessTrees) {
+    foreach ($literal in Get-SqlNodes -Node $entry.Tree -TypeName 'StringLiteral') {
+        if ($literal.Value -notmatch '^\s*ALTER TABLE dbo\.') { continue }
+        $reader = [System.IO.StringReader]::new($literal.Value)
+        try {
+            $parseErrors = $null
+            $tree = $parser.Parse($reader, [ref]$parseErrors)
+            if ($parseErrors.Count) { throw "Invalid dynamic ALTER in $($entry.Path): $($parseErrors.Message)" }
+            $migrationTrees += [PSCustomObject]@{ Path = $entry.Path; Tree = $tree }
+            foreach ($alter in Get-SqlNodes -Node $tree -TypeName 'AlterTableAddTableElementStatement') {
+                $name = $alter.SchemaObjectName.BaseIdentifier.Value
+                foreach ($column in $alter.Definition.ColumnDefinitions) {
+                    [void]$tables[$name].Add($column.ColumnIdentifier.Value)
+                }
+            }
+        }
+        finally { $reader.Dispose() }
+    }
+}
+foreach ($entry in @($businessTrees) + @($migrationTrees)) {
     foreach ($node in Get-SqlNodes -Node $entry.Tree -TypeName 'NamedTableReference') {
         if ($null -ne $node.SchemaObject.SchemaIdentifier -and $node.SchemaObject.SchemaIdentifier.Value -ceq 'dbo') {
             $name = $node.SchemaObject.BaseIdentifier.Value
@@ -123,6 +148,6 @@ foreach ($entry in $businessTrees) {
 foreach ($pair in @(@('SensorReadings', 'RecordeAt'), @('ControlLogs', 'ExecuteAt'), @('EnvironmentThresholds', 'ThresholdsId'), @('EnvironmentThresholds', 'UpdateAt'), @('EnvironmentThresholds', 'RowVer'))) {
     if (-not $tables[$pair[0]].Contains($pair[1])) { throw "Missing protected column $($pair -join '.')" }
 }
-Write-Output ('STATIC PASS: {0} SQL files; nine business tables; twelve application procedures; dbo table, INSERT column and FK target references checked.' -f $trees.Count)
-Write-Output 'STATIC PASS: nine PK, three UNIQUE, eleven FK and fifteen CHECK definitions.'
+Write-Output ('STATIC PASS: {0} SQL files; twelve business tables; nineteen application procedures; dbo table, INSERT column and FK target references checked.' -f $trees.Count)
+Write-Output 'STATIC PASS: twelve PK, three UNIQUE, seventeen FK and twenty-six inline CHECK definitions; dynamic ALTER batches parsed.'
 Write-Output 'NOT TESTED: SQL Server binding, permissions, transaction execution and two-session concurrency.'
