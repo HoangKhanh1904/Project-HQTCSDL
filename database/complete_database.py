@@ -1,28 +1,24 @@
 """Deploy and verify the database completion without changing application files."""
 import argparse
 import datetime as dt
-import hashlib
-import json
-import re
 import sys
 import threading
 import time
 import uuid
-from pathlib import Path
 
 sys.dont_write_bytecode = True
 import run_database_demo as d
 
-EVIDENCE = d.EVIDENCE_ROOT / "completion_20261026"
-d.EVIDENCE = EVIDENCE
 DEPLOY_FILES = [
-    "create_tables.sql", "alter_table.sql", "runtime_migration.sql",
+    "create_tables.sql", "alter_table.sql", "runtime_migration.sql", "application_extension.sql",
     "concurrency/sp_acknowledge_alert.sql", "concurrency/sp_get_environment_threshold.sql",
     "concurrency/sp_update_environment_threshold.sql", "procedures/sp_insert_sensor_reading.sql",
     "procedures/sp_transition_alert.sql", "procedures/sp_resolve_alert.sql", "procedures/sp_reopen_alert.sql",
     "procedures/sp_create_environment_threshold.sql", "procedures/sp_get_latest_sensor_readings.sql",
     "procedures/sp_get_sensor_history.sql", "procedures/sp_get_unresolved_alerts.sql",
-    "procedures/sp_get_zone_dashboard.sql", "security.sql", "isolation_demos/setup.sql",
+    "procedures/sp_get_zone_dashboard.sql", "procedures/sp_bird_movements.sql",
+    "procedures/sp_get_environment_metrics.sql", "procedures/sp_simulated_system_events.sql",
+    "procedures/sp_simulate_device_control.sql", "security.sql", "isolation_demos/setup.sql",
     "isolation_demos/01_dirty_read.sql", "isolation_demos/02_nonrepeatable_read.sql",
     "isolation_demos/03_phantom_read.sql", "isolation_demos/04_lost_update.sql",
 ]
@@ -413,17 +409,10 @@ def fresh(conn):
 
 
 def main():
-    global EVIDENCE
     parser = argparse.ArgumentParser()
     parser.add_argument("stage", choices=["preflight", "deploy", "isolation", "runtime", "regression", "fresh", "after"])
-    parser.add_argument("--evidence-dir", type=Path)
     args=parser.parse_args()
     stage=args.stage
-    if args.evidence_dir:
-        EVIDENCE=args.evidence_dir.resolve()
-        if not EVIDENCE.is_relative_to(d.EVIDENCE_ROOT.resolve()):
-            raise ValueError("Evidence must stay inside docs/database/runtime_evidence/")
-        d.EVIDENCE=EVIDENCE
     connection = d.connect()
     try:
         if stage in ["preflight","after"]:

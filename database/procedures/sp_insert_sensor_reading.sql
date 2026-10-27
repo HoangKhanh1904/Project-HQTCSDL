@@ -5,7 +5,9 @@ CREATE OR ALTER PROCEDURE dbo.sp_InsertSensorReading
     @Temperature DECIMAL(5,2),
     @Humidity DECIMAL(5,2),
     @SourceEventId UNIQUEIDENTIFIER = NULL,
-    @ResultCode VARCHAR(32) = NULL OUTPUT
+    @ResultCode VARCHAR(32) = NULL OUTPUT,
+    @CO2Ppm DECIMAL(8,2) = NULL,
+    @LightLux DECIMAL(9,2) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -17,6 +19,7 @@ BEGIN
     DECLARE @ThresholdStatus VARCHAR(20), @ThresholdsId INT;
     DECLARE @MinT DECIMAL(5,2), @MaxT DECIMAL(5,2), @MinH DECIMAL(5,2), @MaxH DECIMAL(5,2);
     DECLARE @OldT DECIMAL(5,2), @OldH DECIMAL(5,2);
+    DECLARE @OldCO2 DECIMAL(8,2), @OldLux DECIMAL(9,2);
     DECLARE @Inserted TABLE(ReadingId BIGINT, RecordeAt DATETIME2);
     BEGIN TRY
         IF @EntryTranCount=0 BEGIN TRANSACTION;
@@ -25,6 +28,7 @@ BEGIN
         -- VALIDATION
         IF @DeviceId IS NULL OR @DeviceId<=0 OR @Temperature IS NULL OR @Humidity IS NULL
            OR @Temperature NOT BETWEEN -40 AND 100 OR @Humidity NOT BETWEEN 0 AND 100
+           OR @CO2Ppm NOT BETWEEN 0 AND 100000 OR @LightLux NOT BETWEEN 0 AND 200000
         BEGIN
             SET @Code='VALIDATION_ERROR'; SET @Message=N'Số đo hoặc DeviceId không hợp lệ.';
             GOTO BusinessFailure;
@@ -48,11 +52,13 @@ BEGIN
         -- REPLAY
         IF @SourceEventId IS NOT NULL
         BEGIN
-            SELECT @ReadingId=ReadingId, @RecordeAt=RecordeAt, @OldT=Temperature, @OldH=Humidity
+            SELECT @ReadingId=ReadingId, @RecordeAt=RecordeAt, @OldT=Temperature, @OldH=Humidity,
+                   @OldCO2=CO2Ppm,@OldLux=LightLux
             FROM dbo.SensorReadings WHERE DeviceId=@DeviceId AND SourceEventId=@SourceEventId;
             IF @ReadingId IS NOT NULL
             BEGIN
                 IF @OldT<>@Temperature OR @OldH<>@Humidity
+                   OR EXISTS(SELECT @OldCO2,@OldLux EXCEPT SELECT @CO2Ppm,@LightLux)
                 BEGIN
                     SET @Code='IDEMPOTENCY_CONFLICT'; SET @Message=N'Mã số đo đã dùng cho dữ liệu khác.'; GOTO BusinessFailure;
                 END;
@@ -67,9 +73,9 @@ BEGIN
                @MinH=MinHumidity,@MaxH=MaxHumidity
         FROM dbo.EnvironmentThresholds WITH (HOLDLOCK) WHERE ZoneId=@ZoneId;
         SET @ThresholdStatus=CASE WHEN @ThresholdsId IS NULL THEN 'UNCONFIGURED' ELSE 'CONFIGURED' END;
-        INSERT dbo.SensorReadings(DeviceId,Temperature,Humidity,SourceEventId)
+        INSERT dbo.SensorReadings(DeviceId,Temperature,Humidity,SourceEventId,CO2Ppm,LightLux)
         OUTPUT inserted.ReadingId,inserted.RecordeAt INTO @Inserted
-        VALUES (@DeviceId,@Temperature,@Humidity,@SourceEventId);
+        VALUES (@DeviceId,@Temperature,@Humidity,@SourceEventId,@CO2Ppm,@LightLux);
         SELECT @ReadingId=ReadingId,@RecordeAt=RecordeAt FROM @Inserted;
 
         -- ALERTS

@@ -15,6 +15,13 @@ IF OBJECT_ID('dbo.sp_AcknowledgeAlert', 'P') IS NULL
    OR OBJECT_ID('dbo.sp_GetSensorHistory', 'P') IS NULL
    OR OBJECT_ID('dbo.sp_GetUnresolvedAlerts', 'P') IS NULL
    OR OBJECT_ID('dbo.sp_GetZoneDashboard', 'P') IS NULL
+   OR OBJECT_ID('dbo.sp_InsertBirdMovement', 'P') IS NULL
+   OR OBJECT_ID('dbo.sp_GetBirdMovementDaily', 'P') IS NULL
+   OR OBJECT_ID('dbo.sp_GetEnvironmentMetrics', 'P') IS NULL
+   OR OBJECT_ID('dbo.sp_InsertSimulatedSystemEvent', 'P') IS NULL
+   OR OBJECT_ID('dbo.sp_UpdateSimulatedEventStatus', 'P') IS NULL
+   OR OBJECT_ID('dbo.sp_GetSimulatedSystemEvents', 'P') IS NULL
+   OR OBJECT_ID('dbo.sp_SimulateDeviceControl', 'P') IS NULL
     THROW 52201, N'Triển khai các procedure trước security.sql.', 1;
 
 BEGIN TRY
@@ -103,6 +110,34 @@ BEGIN TRY
     DENY INSERT, UPDATE, DELETE ON dbo.AlertActions TO SwiftletIngest;
     DENY INSERT, UPDATE, DELETE ON dbo.EnvironmentThresholds TO SwiftletIngest;
 
+    -- APPLICATION SIMULATION EXTENSION
+    -- No change to legacy grants. New tables are writable only through APIs.
+    GRANT SELECT ON dbo.BirdMovementEvents TO SwiftletAdmin,SwiftletStaff;
+    GRANT SELECT ON dbo.DeviceControlSettings TO SwiftletAdmin,SwiftletStaff;
+    GRANT SELECT ON dbo.SimulatedSystemEvents TO SwiftletAdmin,SwiftletStaff;
+    DENY INSERT,UPDATE,DELETE ON dbo.BirdMovementEvents TO SwiftletAdmin,SwiftletStaff,SwiftletIngest;
+    DENY INSERT,UPDATE,DELETE ON dbo.DeviceControlSettings TO SwiftletAdmin,SwiftletStaff,SwiftletIngest;
+    DENY INSERT,UPDATE,DELETE ON dbo.SimulatedSystemEvents TO SwiftletAdmin,SwiftletStaff,SwiftletIngest;
+    DENY SELECT ON dbo.BirdMovementEvents TO SwiftletIngest;
+    DENY SELECT ON dbo.DeviceControlSettings TO SwiftletIngest;
+    DENY SELECT ON dbo.SimulatedSystemEvents TO SwiftletIngest;
+    GRANT EXECUTE ON dbo.sp_InsertBirdMovement TO SwiftletAdmin,SwiftletStaff,SwiftletIngest;
+    GRANT EXECUTE ON dbo.sp_GetBirdMovementDaily TO SwiftletAdmin,SwiftletStaff;
+    GRANT EXECUTE ON dbo.sp_GetEnvironmentMetrics TO SwiftletAdmin,SwiftletStaff;
+    GRANT EXECUTE ON dbo.sp_GetSimulatedSystemEvents TO SwiftletAdmin,SwiftletStaff;
+    GRANT EXECUTE ON dbo.sp_InsertSimulatedSystemEvent TO SwiftletAdmin,SwiftletIngest;
+    DENY EXECUTE ON dbo.sp_InsertSimulatedSystemEvent TO SwiftletStaff;
+    GRANT EXECUTE ON dbo.sp_UpdateSimulatedEventStatus TO SwiftletAdmin,SwiftletStaff;
+    GRANT EXECUTE ON dbo.sp_SimulateDeviceControl TO SwiftletAdmin,SwiftletStaff;
+    DENY EXECUTE ON dbo.sp_SimulateDeviceControl TO SwiftletIngest;
+    DENY EXECUTE ON dbo.sp_UpdateSimulatedEventStatus TO SwiftletIngest;
+    DENY EXECUTE ON dbo.sp_GetBirdMovementDaily TO SwiftletIngest;
+    DENY EXECUTE ON dbo.sp_GetEnvironmentMetrics TO SwiftletIngest;
+    DENY EXECUTE ON dbo.sp_GetSimulatedSystemEvents TO SwiftletIngest;
+    DENY EXECUTE ON dbo.sp_TransitionAlert TO SwiftletAdmin,SwiftletStaff,SwiftletIngest;
+
+    -- Demo SQL principals are permission fixtures, not authenticated app users.
+    -- The backend must obtain @UserId from its authenticated session.
     -- DEMO PRINCIPALS
     IF DATABASE_PRINCIPAL_ID('swiftlet_admin_demo') IS NULL
         CREATE USER swiftlet_admin_demo WITHOUT LOGIN;
