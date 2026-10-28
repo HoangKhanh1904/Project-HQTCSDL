@@ -87,6 +87,50 @@ BEGIN
     RETURN @KetQua;
 END;
 GO
+-- PHAN 4B: KIEM TRA MOI TRUONG THEO ZONE
+
+CREATE OR ALTER FUNCTION dbo.fn_KiemTraMoiTruongTheoZone
+(
+    @ZoneId INT,
+    @NhietDo DECIMAL(5,2),
+    @DoAm DECIMAL(5,2)
+)
+RETURNS NVARCHAR(30)
+AS
+BEGIN
+    DECLARE @MinTemp DECIMAL(5,2);
+    DECLARE @MaxTemp DECIMAL(5,2);
+    DECLARE @MinHum DECIMAL(5,2);
+    DECLARE @MaxHum DECIMAL(5,2);
+
+    IF @ZoneId IS NULL
+        RETURN N'Chưa cấu hình';
+
+    IF @NhietDo IS NULL OR @DoAm IS NULL
+        RETURN N'Chưa có dữ liệu';
+
+    IF @NhietDo NOT BETWEEN -40 AND 100
+       OR @DoAm NOT BETWEEN 0 AND 100
+        RETURN N'Dữ liệu không hợp lệ';
+
+    SELECT
+        @MinTemp = MinTemperature,
+        @MaxTemp = MaxTemperature,
+        @MinHum = MinHumidity,
+        @MaxHum = MaxHumidity
+    FROM dbo.EnvironmentThresholds
+    WHERE ZoneId = @ZoneId;
+
+    IF @MinTemp IS NULL
+        RETURN N'Chưa cấu hình';
+
+    IF @NhietDo < @MinTemp OR @NhietDo > @MaxTemp
+       OR @DoAm < @MinHum OR @DoAm > @MaxHum
+        RETURN N'Bất thường';
+
+    RETURN N'Bình thường';
+END;
+GO
 
 -- =========================================
 -- PHAN 5: KIEM TRA INDEX
@@ -110,106 +154,132 @@ GO
 -- PHAN 6: QA TEST CASES
 -- =========================================
 
--- TC01: KIEM TRA TONG SO CANH BAO
-IF (SELECT COUNT(*) FROM dbo.Alerts) = 8
-    PRINT N'TC01: PASS';
+
+-- Cac Test Case cu da duoc chuyen sang
+-- scripts/qa_tests.sql
+-- Khong su dung so luong du lieu mau co dinh.
+GO
+
+-- =========================================
+-- PHAN 7: THONG KE LUOT CHIM IN / OUT
+-- =========================================
+
+
+-- =========================================
+-- PHAN 7: THONG KE LUOT CHIM IN / OUT
+-- =========================================
+
+IF OBJECT_ID('dbo.BirdMovementEvents', 'U') IS NOT NULL
+BEGIN
+    EXEC sys.sp_executesql N'
+        SELECT
+            h.HouseName AS TenNhaYen,
+            CAST(b.ObservedAt AS DATE) AS Ngay,
+            SUM(CASE WHEN b.Direction = ''IN''
+                THEN b.BirdCount ELSE 0 END) AS ChimVao,
+            SUM(CASE WHEN b.Direction = ''OUT''
+                THEN b.BirdCount ELSE 0 END) AS ChimRa,
+            SUM(CASE WHEN b.Direction = ''IN''
+                THEN b.BirdCount ELSE -b.BirdCount END)
+                AS ChenhLechLuot
+        FROM dbo.BirdMovementEvents b
+        JOIN dbo.SwiftletHouses h
+            ON b.HouseId = h.HouseId
+        WHERE b.SourceType = ''SIMULATED''
+        GROUP BY
+            h.HouseId,
+            h.HouseName,
+            CAST(b.ObservedAt AS DATE)
+        ORDER BY Ngay DESC, TenNhaYen;
+    ';
+END
 ELSE
-    PRINT N'TC01: FAIL';
+BEGIN
+    PRINT 'PHAN 7: NOT TESTED - Chua co BirdMovementEvents';
+END;
 GO
 
--- TC02: KIEM TRA LOAI CANH BAO
-DECLARE @HighTemp INT;
-DECLARE @HighHumidity INT;
+-- =========================================
+-- PHAN 8: CTE SO DO MOI NHAT
+-- =========================================
 
-SELECT @HighTemp = COUNT(*)
-FROM dbo.Alerts
-WHERE AlertType = 'HIGH_TEMP';
-
-SELECT @HighHumidity = COUNT(*)
-FROM dbo.Alerts
-WHERE AlertType = 'HIGH_HUMIDITY';
-
-IF @HighTemp = 4 AND @HighHumidity = 4
-    PRINT N'TC02: PASS';
-ELSE
-    PRINT N'TC02: FAIL';
+;WITH LatestReading AS (
+    SELECT
+        DeviceId,
+        Temperature,
+        Humidity,
+        RecordeAt,
+        ROW_NUMBER() OVER (
+            PARTITION BY DeviceId
+            ORDER BY RecordeAt DESC, ReadingId DESC
+        ) AS rn
+    FROM dbo.SensorReadings
+)
+SELECT
+    d.DeviceId,
+    d.DeviceName,
+    z.ZoneName,
+    r.Temperature,
+    r.Humidity,
+    r.RecordeAt,
+    CASE
+        WHEN r.DeviceId IS NULL THEN N'NO_DATA'
+        WHEN t.ZoneId IS NULL THEN N'UNCONFIGURED'
+        ELSE dbo.fn_KiemTraMoiTruongTheoZone(
+            z.ZoneId, r.Temperature, r.Humidity
+        )
+    END AS TrangThai
+FROM dbo.Devices d
+JOIN dbo.Zones z ON d.ZoneId = z.ZoneId
+LEFT JOIN LatestReading r
+    ON d.DeviceId = r.DeviceId AND r.rn = 1
+LEFT JOIN dbo.EnvironmentThresholds t
+    ON z.ZoneId = t.ZoneId
+WHERE d.DeviceType = 'SENSOR'
+ORDER BY d.DeviceId;
 GO
 
--- TC03: KIEM TRA NHIET DO KHONG HOP LE
-SET XACT_ABORT OFF;
+-- =========================================
+-- PHAN 9: CTE XEP HANG CANH BAO
+-- =========================================
 
-BEGIN TRY
-    BEGIN TRANSACTION;
-
-    INSERT INTO dbo.SensorReadings
-        (DeviceId, Temperature, Humidity)
-    SELECT TOP 1 DeviceId, 120, 80
-    FROM dbo.Devices
-    WHERE DeviceType = 'SENSOR';
-
-    IF @@ROWCOUNT = 0
-        PRINT N'TC03: FAIL - Khong co cam bien';
-    ELSE
-        PRINT N'TC03: FAIL - Chap nhan nhiet do sai';
-
-    ROLLBACK TRANSACTION;
-END TRY
-BEGIN CATCH
-    IF @@TRANCOUNT > 0
-        ROLLBACK TRANSACTION;
-
-    IF ERROR_NUMBER() = 547
-       AND ERROR_MESSAGE() LIKE '%Ck_Readings_Temperature%'
-        PRINT N'TC03: PASS';
-    ELSE
-        PRINT N'TC03: FAIL';
-END CATCH;
-GO
-
--- TC04: KIEM TRA DO AM KHONG HOP LE
-SET XACT_ABORT OFF;
-
-BEGIN TRY
-    BEGIN TRANSACTION;
-
-    INSERT INTO dbo.SensorReadings
-        (DeviceId, Temperature, Humidity)
-    SELECT TOP 1 DeviceId, 29, 120
-    FROM dbo.Devices
-    WHERE DeviceType = 'SENSOR';
-
-    IF @@ROWCOUNT = 0
-        PRINT N'TC04: FAIL - Khong co cam bien';
-    ELSE
-        PRINT N'TC04: FAIL - Chap nhan do am sai';
-
-    ROLLBACK TRANSACTION;
-END TRY
-BEGIN CATCH
-    IF @@TRANCOUNT > 0
-        ROLLBACK TRANSACTION;
-
-    IF ERROR_NUMBER() = 547
-       AND ERROR_MESSAGE() LIKE '%Ck_Readings_Humidity%'
-        PRINT N'TC04: PASS';
-    ELSE
-        PRINT N'TC04: FAIL';
-END CATCH;
-GO
-
--- TC05: KIEM TRA FUNCTION
-DECLARE @BinhThuong NVARCHAR(20);
-DECLARE @BatThuong NVARCHAR(20);
-
-SELECT @BinhThuong =
-    dbo.fn_KiemTraMoiTruong(29, 80);
-
-SELECT @BatThuong =
-    dbo.fn_KiemTraMoiTruong(35, 95);
-
-IF @BinhThuong = N'Bình thường'
-   AND @BatThuong = N'Bất thường'
-    PRINT N'TC05: PASS';
-ELSE
-    PRINT N'TC05: FAIL';
+;WITH ThongKeCanhBao AS (
+    SELECT
+        h.HouseId,
+        h.HouseName,
+        z.ZoneId,
+        z.ZoneName,
+        COUNT(a.AlertId) AS SoCanhBao,
+        SUM(CASE
+            WHEN a.Status = 'PENDING' THEN 1
+            ELSE 0
+        END) AS SoChoXuLy
+    FROM dbo.SwiftletHouses h
+    JOIN dbo.Zones z
+        ON h.HouseId = z.HouseId
+    LEFT JOIN dbo.Alerts a
+        ON z.ZoneId = a.ZoneId
+    GROUP BY
+        h.HouseId,
+        h.HouseName,
+        z.ZoneId,
+        z.ZoneName
+),
+XepHang AS (
+    SELECT
+        *,
+        DENSE_RANK() OVER (
+            PARTITION BY HouseId
+            ORDER BY SoCanhBao DESC
+        ) AS HangCanhBao
+    FROM ThongKeCanhBao
+)
+SELECT
+    HouseName,
+    ZoneName,
+    SoCanhBao,
+    SoChoXuLy,
+    HangCanhBao
+FROM XepHang
+ORDER BY HouseName, HangCanhBao, ZoneName;
 GO
