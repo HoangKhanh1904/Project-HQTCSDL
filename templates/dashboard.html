@@ -1,0 +1,481 @@
+
+{% extends "base.html" %}
+
+{% block title %}Tổng quan | SwiftletCare{% endblock %}
+{% block page_heading %}Tổng quan hệ thống{% endblock %}
+
+{% block content %}
+
+<div class="dashboard-hero mb-4">
+    <div class="hero-copy">
+        <span class="hero-eyebrow">SWIFTLETCARE · SMART FARM</span>
+        <h2>Giám sát nhà yến thông minh</h2>
+        <p>Theo dõi nhiệt độ, độ ẩm, CO₂ và ánh sáng tại các khu vực nhà yến.</p>
+        <a href="/farms" class="btn btn-light fw-semibold mt-2">
+            🏡 Quản lý nhà yến
+        </a>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+        <div class="sun"></div>
+        <div class="bird">🐦</div>
+        <div class="house">🏡</div>
+        <div class="leaf">🌿</div>
+    </div>
+</div>
+
+<div class="data-notice mb-3">
+    <span class="demo-pill" id="dashboardDataSource">MOCK · DỮ LIỆU THỬ</span>
+    <span id="dashboardConnection" role="status">Đang tải dữ liệu...</span>
+    <span id="dashboardLastUpdate"></span>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="dashboard-stat">
+            <div class="stat-top">
+                <span class="stat-label">Số khu vực</span>
+                <span class="stat-emoji">🏡</span>
+            </div>
+            <div class="stat-value" id="zoneCount">—</div>
+            <div class="stat-foot">Khu vực được API trả về</div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="dashboard-stat">
+            <div class="stat-top">
+                <span class="stat-label">Nhiệt độ trung bình</span>
+                <span class="stat-emoji">🌡️</span>
+            </div>
+            <div class="stat-value" id="avgTemperature">—</div>
+            <div class="stat-foot">°C · Các khu có dữ liệu</div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="dashboard-stat">
+            <div class="stat-top">
+                <span class="stat-label">Độ ẩm trung bình</span>
+                <span class="stat-emoji">💧</span>
+            </div>
+            <div class="stat-value" id="avgHumidity">—</div>
+            <div class="stat-foot">%RH · Các khu có dữ liệu</div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="dashboard-stat">
+            <div class="stat-top">
+                <span class="stat-label">Dữ liệu môi trường</span>
+                <span class="stat-emoji">📡</span>
+            </div>
+            <div class="stat-value" id="readingCount">—</div>
+            <div class="stat-foot">Số khu có chỉ số nhiệt độ</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-xl-8">
+        <div class="content-card h-100">
+            <div class="section-heading">
+                <div>
+                    <h5>Giám sát môi trường</h5>
+                    <p>Chỉ số mới nhất theo từng khu vực</p>
+                </div>
+                <span class="demo-pill">MOCK</span>
+            </div>
+
+            <div class="environment-grid">
+                <div class="environment-item">
+                    <span>🌡️ Nhiệt độ</span>
+                    <strong id="currentTemperature">Chưa có dữ liệu</strong>
+                </div>
+                <div class="environment-item">
+                    <span>💧 Độ ẩm</span>
+                    <strong id="currentHumidity">Chưa có dữ liệu</strong>
+                </div>
+                <div class="environment-item">
+                    <span>🌫️ CO₂</span>
+                    <strong id="currentCO2">Chưa có dữ liệu</strong>
+                </div>
+                <div class="environment-item">
+                    <span>💡 Ánh sáng</span>
+                    <strong id="currentLight">Chưa có dữ liệu</strong>
+                </div>
+            </div>
+
+            <div class="section-heading mt-4">
+                <div>
+                    <h5>Biến động môi trường</h5>
+                    <p>Biểu đồ sẽ có dữ liệu khi API cung cấp lịch sử đo</p>
+                </div>
+            </div>
+
+            <div class="chart-wrap">
+                <canvas id="environmentChart" hidden></canvas>
+                <p id="chartEmpty" class="empty-message">
+                    Chưa có dữ liệu lịch sử để vẽ biểu đồ.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-4">
+        <div class="content-card h-100">
+            <div class="section-heading">
+                <div>
+                    <h5>Tình trạng kết nối</h5>
+                    <p>Trạng thái từ dữ liệu API</p>
+                </div>
+                <span class="stat-emoji">📶</span>
+            </div>
+
+            <div id="zoneStatusList">
+                <p class="empty-message">Đang tải dữ liệu khu vực...</p>
+            </div>
+
+            <div class="device-note">
+                Trạng thái thiết bị thực tế chưa được kết nối.
+                Không suy diễn trạng thái thiết bị từ chỉ số cảm biến.
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="content-card mb-4">
+    <div class="section-heading">
+        <div>
+            <h5>Giám sát các khu vực</h5>
+            <p>Nhiệt độ, độ ẩm, CO₂ và ánh sáng mới nhất</p>
+        </div>
+        <span class="demo-pill">DỮ LIỆU MOCK</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table dashboard-table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Khu vực</th>
+                    <th>Nhiệt độ</th>
+                    <th>Độ ẩm</th>
+                    <th>CO₂</th>
+                    <th>Ánh sáng</th>
+                    <th>Cập nhật lần cuối</th>
+                </tr>
+            </thead>
+            <tbody id="zonesTableBody">
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">
+                        Đang tải dữ liệu...
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="content-card">
+    <div class="section-heading">
+        <div>
+            <h5>Trạng thái dữ liệu</h5>
+            <p>Thông tin kiểm tra kết nối API</p>
+        </div>
+    </div>
+
+    <div id="apiMessage" class="api-message" role="status">
+        Đang kết nối API...
+    </div>
+</div>
+
+<style>
+.dashboard-hero {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 220px;
+    overflow: hidden;
+    border-radius: 18px;
+    padding: 30px 36px;
+    color: white;
+    background: linear-gradient(115deg, #153f34, #28765a 70%, #65a67a);
+}
+.hero-copy { position: relative; z-index: 2; max-width: 560px; }
+.hero-eyebrow { font-size: 11px; letter-spacing: 2px; color: #c1e8d0; font-weight: 700; }
+.hero-copy h2 { font-weight: 750; margin: 12px 0 8px; }
+.hero-copy p { color: #e0f0e6; max-width: 450px; margin-bottom: 8px; }
+.hero-art { position: relative; width: 230px; height: 160px; flex-shrink: 0; }
+.sun { position: absolute; width: 100px; height: 100px; border-radius: 50%; background: #d6e9a4; opacity: .9; top: 5px; right: 35px; }
+.bird { position: absolute; top: 15px; left: 12px; font-size: 38px; transform: rotate(-12deg); }
+.house { position: absolute; right: 34px; bottom: 0; font-size: 95px; }
+.leaf { position: absolute; right: 0; bottom: 5px; font-size: 48px; }
+
+.data-notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: #64736a;
+}
+.demo-pill {
+    display: inline-block;
+    background: #edf6ef;
+    color: #327653;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    border-radius: 20px;
+    padding: 7px 10px;
+    white-space: nowrap;
+}
+.dashboard-stat {
+    height: 100%;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #e7eee9;
+    border-radius: 15px;
+    box-shadow: 0 5px 18px #173b3510;
+}
+.stat-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.stat-label { margin: 0; font-size: 13px; font-weight: 600; color: #64736a; }
+.stat-emoji { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #edf6ef; font-size: 21px; }
+.stat-value { margin: 14px 0 8px; font-size: 28px; font-weight: 750; color: #203f33; overflow-wrap: anywhere; }
+.stat-foot { font-size: 12px; color: #78877f; }
+
+.content-card {
+    background: #fff;
+    border: 1px solid #e7eee9;
+    border-radius: 15px;
+    padding: 22px;
+    box-shadow: 0 5px 18px #173b3508;
+}
+.section-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 22px;
+}
+.section-heading h5 { font-weight: 750; color: #244638; font-size: 16px; margin: 0 0 5px; }
+.section-heading p { font-size: 12px; color: #829087; margin: 0; }
+
+.environment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.environment-item { padding: 16px; border-radius: 12px; background: #f5f9f5; min-width: 0; }
+.environment-item span { display: block; color: #748279; font-size: 12px; margin-bottom: 9px; }
+.environment-item strong { color: #244638; font-size: 19px; overflow-wrap: anywhere; }
+.chart-wrap { position: relative; min-height: 80px; }
+.empty-message { color: #829087; font-size: 13px; padding: 16px 0; margin: 0; }
+.zone-status-row { display: flex; justify-content: space-between; gap: 10px; padding: 15px 0; border-bottom: 1px solid #edf1ee; }
+.zone-status-row strong { color: #30483b; font-size: 13px; }
+.zone-status-row small { display: block; margin-top: 5px; color: #89968e; font-size: 11px; }
+.status-chip { display: inline-block; border-radius: 20px; padding: 6px 9px; white-space: nowrap; font-size: 10px; background: #edf0ee; color: #66756d; }
+.device-note { margin-top: 16px; color: #8b968f; font-size: 11px; line-height: 1.6; }
+.dashboard-table thead th { background: #f2f7f3; font-size: 11px; color: #62786b; padding: 13px 12px; white-space: nowrap; }
+.dashboard-table td { padding: 14px 12px; font-size: 12px; color: #64736a; }
+.api-message { padding: 14px; border-radius: 10px; background: #f5f9f5; color: #52675a; font-size: 13px; overflow-wrap: anywhere; }
+.api-message.error { background: #fff0ee; color: #a23c32; }
+
+@media (max-width: 768px) {
+    .dashboard-hero { padding: 24px; }
+    .hero-art { display: none; }
+    .dashboard-hero h2 { font-size: 23px; }
+    .content-card { padding: 16px; }
+    .environment-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const $ = id => document.getElementById(id);
+
+    function formatValue(value, unit = "") {
+        if (value === null || value === undefined || value === "") {
+            return "Chưa có dữ liệu";
+        }
+        if (typeof value === "number" && !Number.isFinite(value)) {
+            return "Chưa có dữ liệu";
+        }
+        return `${value}${unit}`;
+    }
+
+    function formatTime(value) {
+        if (!value) return "Chưa có dữ liệu";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString("vi-VN");
+    }
+
+    function showError(message) {
+    // Không giữ số liệu cũ khi API lỗi.
+    $("dashboardDataSource").textContent = "MOCK · CHƯA XÁC NHẬN DỮ LIỆU";
+    $("dashboardConnection").textContent = "Lỗi kết nối API";
+    $("dashboardLastUpdate").textContent = "Không cập nhật được";
+    $("apiMessage").textContent = message;
+    $("apiMessage").classList.add("error");
+
+    [
+        "zoneCount",
+        "avgTemperature",
+        "avgHumidity",
+        "readingCount",
+        "currentTemperature",
+        "currentHumidity",
+        "currentCO2",
+        "currentLight"
+    ].forEach(id => {
+        $(id).textContent = "Chưa có dữ liệu";
+    });
+
+    $("zonesTableBody").replaceChildren();
+
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 6;
+    cell.className = "text-center text-muted py-4";
+    cell.textContent =
+        "Không thể tải dữ liệu. Kiểm tra kết nối rồi tải lại trang.";
+
+    row.appendChild(cell);
+    $("zonesTableBody").appendChild(row);
+
+    $("zoneStatusList").replaceChildren();
+
+    const statusMessage = document.createElement("p");
+    statusMessage.className = "empty-message";
+    statusMessage.textContent =
+        "Không thể xác định dữ liệu khu vực khi API lỗi.";
+
+    $("zoneStatusList").appendChild(statusMessage);
+}
+
+    function renderZones(zones) {
+        const safeZones = Array.isArray(zones) ? zones : [];
+
+        $("zoneCount").textContent = safeZones.length;
+
+        const temperatureValues = safeZones
+            .map(zone => zone.temperature)
+            .filter(value => typeof value === "number" && Number.isFinite(value));
+
+        const humidityValues = safeZones
+            .map(zone => zone.humidity)
+            .filter(value => typeof value === "number" && Number.isFinite(value));
+
+        $("avgTemperature").textContent = temperatureValues.length
+            ? formatValue(
+                Math.round(temperatureValues.reduce((a, b) => a + b, 0) /
+                temperatureValues.length * 10) / 10, " °C")
+            : "Chưa có dữ liệu";
+
+        $("avgHumidity").textContent = humidityValues.length
+            ? formatValue(
+                Math.round(humidityValues.reduce((a, b) => a + b, 0) /
+                humidityValues.length * 10) / 10, " %")
+            : "Chưa có dữ liệu";
+
+        $("readingCount").textContent = temperatureValues.length;
+
+        const latest = safeZones.find(zone =>
+            zone.temperature !== null && zone.temperature !== undefined
+        ) || {};
+
+        $("currentTemperature").textContent = formatValue(latest.temperature, " °C");
+        $("currentHumidity").textContent = formatValue(latest.humidity, " %RH");
+        $("currentCO2").textContent = formatValue(latest.co2, " ppm");
+        $("currentLight").textContent = formatValue(latest.light, " lux");
+
+        $("zonesTableBody").replaceChildren();
+        $("zoneStatusList").replaceChildren();
+
+        if (safeZones.length === 0) {
+            $("zonesTableBody").innerHTML = `
+                <tr><td colspan="6" class="text-center text-muted py-4">
+                    Chưa có dữ liệu.
+                </td></tr>`;
+            $("zoneStatusList").textContent = "Chưa có dữ liệu khu vực.";
+            return;
+        }
+
+        safeZones.forEach((zone, index) => {
+            const tr = document.createElement("tr");
+            const values = [
+                zone.zone_name || `Khu vực ${index + 1}`,
+                formatValue(zone.temperature, " °C"),
+                formatValue(zone.humidity, " %RH"),
+                formatValue(zone.co2, " ppm"),
+                formatValue(zone.light, " lux"),
+                formatTime(zone.last_updated)
+            ];
+
+            values.forEach(value => {
+                const td = document.createElement("td");
+                td.textContent = value;
+                tr.appendChild(td);
+            });
+            $("zonesTableBody").appendChild(tr);
+
+            const statusRow = document.createElement("div");
+            statusRow.className = "zone-status-row";
+
+            const nameBlock = document.createElement("div");
+            const name = document.createElement("strong");
+            name.textContent = zone.zone_name || `Khu vực ${index + 1}`;
+            const detail = document.createElement("small");
+            detail.textContent = zone.last_updated
+                ? `Cập nhật: ${formatTime(zone.last_updated)}`
+                : "Chưa có thời gian cập nhật";
+            nameBlock.append(name, detail);
+
+            const badge = document.createElement("span");
+            badge.className = "status-chip";
+            badge.textContent = "Chưa rõ trạng thái";
+
+            statusRow.append(nameBlock, badge);
+            $("zoneStatusList").appendChild(statusRow);
+        });
+    }
+
+    async function loadDashboard() {
+        try {
+            const response = await fetch("/api/dashboard/zones", {
+                method: "GET",
+                headers: { "Accept": "application/json" }
+            });
+
+            if (!response.ok) {
+                throw new Error(`API trả về HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (!result || result.success !== true || !result.data) {
+                throw new Error(result?.message || "Dữ liệu API không hợp lệ.");
+            }
+
+            const data = result.data;
+            const zones = Array.isArray(data.zones) ? data.zones : [];
+
+            $("dashboardDataSource").textContent =
+                data.source === "MOCK" ? "MOCK · DỮ LIỆU THỬ" : "API";
+            $("dashboardConnection").textContent = "Đã tải dữ liệu";
+            $("dashboardLastUpdate").textContent =
+                `Kiểm tra lúc ${new Date().toLocaleTimeString("vi-VN")}`;
+            $("apiMessage").textContent =
+                result.message || "Đã nhận phản hồi từ API.";
+            $("apiMessage").classList.remove("error");
+
+            renderZones(zones);
+        } catch (error) {
+            console.error("Dashboard API error:", error);
+            showError("Không thể lấy dữ liệu từ API. Kiểm tra Flask và thử tải lại trang.");
+        }
+    }
+
+    $("chartEmpty").hidden = false;
+    loadDashboard();
+});
+</script>
+
+{% endblock %}

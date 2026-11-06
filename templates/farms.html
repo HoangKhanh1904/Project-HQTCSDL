@@ -1,0 +1,637 @@
+
+{% extends "base.html" %}
+
+{% block title %}Quản lý nhà yến | SwiftletCare{% endblock %}
+{% block page_heading %}Quản lý nhà yến{% endblock %}
+
+{% block content %}
+
+<!-- Tieu de trang -->
+<div class="farms-heading mb-4">
+    <div>
+        <div class="farm-eyebrow">QUẢN LÝ TRANG TRẠI</div>
+        <h2>Những ngôi nhà yến của bạn</h2>
+        <p>Theo dõi thông tin và tình trạng các nhà yến tại một nơi.</p>
+    </div>
+
+    <button type="button" class="btn btn-farm-primary"
+            data-bs-toggle="modal" data-bs-target="#farmModal">
+        <span class="add-symbol">+</span> Thêm nhà yến
+    </button>
+</div>
+
+<!-- Anh banner -->
+<div class="farm-banner mb-4">
+    <div class="farm-banner-content">
+        <span class="banner-tag">SWIFTLETCARE</span>
+        <h3>Chăm sóc nhà yến,<br>theo dõi từng thay đổi.</h3>
+        <p>Quản lý tập trung, vận hành thuận tiện.</p>
+    </div>
+    <div class="farm-banner-decoration" aria-hidden="true">🌿</div>
+</div>
+
+<!-- Thong ke -->
+<div class="row g-3 mb-4">
+    <div class="col-12 col-md-4">
+        <div class="farm-stat-card">
+            <div class="farm-stat-icon icon-green">🏡</div>
+            <div>
+                <div class="farm-stat-label">Tổng số nhà yến</div>
+                <div class="stat-value">3</div>
+                <small>Trong hệ thống demo</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+        <div class="farm-stat-card">
+            <div class="farm-stat-icon icon-mint">🌱</div>
+            <div>
+                <div class="farm-stat-label">Đang hoạt động</div>
+                <div class="stat-value text-success">2</div>
+                <small>Trạng thái minh họa</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+        <div class="farm-stat-card">
+            <div class="farm-stat-icon icon-sand">⏸️</div>
+            <div>
+                <div class="farm-stat-label">Ngừng hoạt động</div>
+                <div class="stat-value text-secondary">1</div>
+                <small>Trạng thái minh họa</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tim kiem va loc -->
+<div class="farm-toolbar mb-4">
+    <div class="farm-search-box">
+        <label for="farmSearch">Tìm nhà yến</label>
+        <div class="search-input-wrap">
+            <span>⌕</span>
+            <input type="search" id="farmSearch" class="form-control"
+                   placeholder="Nhập tên hoặc địa chỉ...">
+        </div>
+    </div>
+
+    <div class="farm-filter-box">
+        <label for="farmStatus">Trạng thái</label>
+        <select id="farmStatus" class="form-select">
+            <option value="">Tất cả trạng thái</option>
+            <option value="Đang hoạt động">Đang hoạt động</option>
+            <option value="Ngừng hoạt động">Ngừng hoạt động</option>
+        </select>
+    </div>
+</div>
+
+<!-- Danh sach dang the -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="fw-bold mb-1">Danh sách nhà yến</h5>
+        <p class="text-muted small mb-0">Thông tin minh họa cho giao diện</p>
+    </div>
+    <span class="farm-count-label">03 nhà yến mẫu</span>
+</div>
+
+<div class="row g-4" id="farmCards">
+
+    <!-- Nha yen 1 -->
+    <div class="col-12 col-md-6 col-xl-4 farm-card-item"
+         data-name="Nhà yến An Phú"
+         data-address="Thủ Đức, TP. Hồ Chí Minh"
+         data-status="Đang hoạt động">
+
+        <article class="farm-property-card">
+            <div class="farm-photo photo-one">
+                <img src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=900&q=80"
+                     alt="Phong cảnh đồng quê xanh mát"
+                     loading="lazy">
+                <span class="farm-photo-badge">NY001</span>
+                <span class="farm-photo-emoji">🏡</span>
+            </div>
+            <div class="farm-property-body">
+                <div class="farm-card-top">
+                    <span class="farm-status-pill active">● Đang hoạt động</span>
+                </div>
+                <h5>Nhà yến An Phú</h5>
+                <p class="farm-address-line">📍 Thủ Đức, TP. Hồ Chí Minh</p>
+
+                <div class="farm-card-details">
+                    <div>
+                        <span>▦</span>
+                        <small>Khu vực</small>
+                        <strong>4 khu vực</strong>
+                    </div>
+                    <div>
+                        <span>◷</span>
+                        <small>Mã nhà yến</small>
+                        <strong>NY001</strong>
+                    </div>
+                </div>
+
+                <div class="farm-card-footer">
+                    <span class="small text-muted">Thông tin demo</span>
+                    <button type="button" class="btn btn-sm btn-outline-success"
+                            disabled title="Chưa kết nối backend">Chi tiết ↗</button>
+                </div>
+            </div>
+        </article>
+    </div>
+
+    <!-- Nha yen 2 -->
+    <div class="col-12 col-md-6 col-xl-4 farm-card-item"
+         data-name="Nhà yến Bình Minh"
+         data-address="Cần Giờ, TP. Hồ Chí Minh"
+         data-status="Đang hoạt động">
+
+        <article class="farm-property-card">
+            <div class="farm-photo photo-two">
+                <img src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=900&q=80"
+                     alt="Khu rừng xanh tươi"
+                     loading="lazy">
+                <span class="farm-photo-badge">NY002</span>
+                <span class="farm-photo-emoji">🌳</span>
+            </div>
+            <div class="farm-property-body">
+                <div class="farm-card-top">
+                    <span class="farm-status-pill active">● Đang hoạt động</span>
+                </div>
+                <h5>Nhà yến Bình Minh</h5>
+                <p class="farm-address-line">📍 Cần Giờ, TP. Hồ Chí Minh</p>
+
+                <div class="farm-card-details">
+                    <div>
+                        <span>▦</span>
+                        <small>Khu vực</small>
+                        <strong>3 khu vực</strong>
+                    </div>
+                    <div>
+                        <span>◷</span>
+                        <small>Mã nhà yến</small>
+                        <strong>NY002</strong>
+                    </div>
+                </div>
+
+                <div class="farm-card-footer">
+                    <span class="small text-muted">Thông tin demo</span>
+                    <button type="button" class="btn btn-sm btn-outline-success"
+                            disabled title="Chưa kết nối backend">Chi tiết ↗</button>
+                </div>
+            </div>
+        </article>
+    </div>
+
+    <!-- Nha yen 3 -->
+    <div class="col-12 col-md-6 col-xl-4 farm-card-item"
+         data-name="Nhà yến Hòa Phát"
+         data-address="Bến Tre"
+         data-status="Ngừng hoạt động">
+
+        <article class="farm-property-card">
+            <div class="farm-photo photo-three">
+                <img src="https://images.unsplash.com/photo-1472396961693-142e6e269027?auto=format&fit=crop&w=900&q=80"
+                     alt="Thiên nhiên và cây cối"
+                     loading="lazy">
+                <span class="farm-photo-badge">NY003</span>
+                <span class="farm-photo-emoji">🌿</span>
+            </div>
+            <div class="farm-property-body">
+                <div class="farm-card-top">
+                    <span class="farm-status-pill inactive">● Ngừng hoạt động</span>
+                </div>
+                <h5>Nhà yến Hòa Phát</h5>
+                <p class="farm-address-line">📍 Bến Tre</p>
+
+                <div class="farm-card-details">
+                    <div>
+                        <span>▦</span>
+                        <small>Khu vực</small>
+                        <strong>5 khu vực</strong>
+                    </div>
+                    <div>
+                        <span>◷</span>
+                        <small>Mã nhà yến</small>
+                        <strong>NY003</strong>
+                    </div>
+                </div>
+
+                <div class="farm-card-footer">
+                    <span class="small text-muted">Thông tin demo</span>
+                    <button type="button" class="btn btn-sm btn-outline-success"
+                            disabled title="Chưa kết nối backend">Chi tiết ↗</button>
+                </div>
+            </div>
+        </article>
+    </div>
+</div>
+
+<div id="farmNoResults" class="farm-no-results mt-3" hidden>
+    <div>🔎</div>
+    <h5>Chưa tìm thấy nhà yến</h5>
+    <p>Thử đổi từ khóa hoặc trạng thái lọc nhé.</p>
+</div>
+
+<!-- Bang an de duy tri du lieu cho JavaScript hien tai -->
+<div hidden aria-hidden="true">
+    <table id="farmTable">
+        <tbody>
+            <tr>
+                <td>NY001</td>
+                <td class="farm-name">Nhà yến An Phú</td>
+                <td class="farm-address">Thủ Đức, TP. Hồ Chí Minh</td>
+                <td>4</td>
+                <td><span class="badge text-bg-success">Đang hoạt động</span></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td>NY002</td>
+                <td class="farm-name">Nhà yến Bình Minh</td>
+                <td class="farm-address">Cần Giờ, TP. Hồ Chí Minh</td>
+                <td>3</td>
+                <td><span class="badge text-bg-success">Đang hoạt động</span></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td>NY003</td>
+                <td class="farm-name">Nhà yến Hòa Phát</td>
+                <td class="farm-address">Bến Tre</td>
+                <td>5</td>
+                <td><span class="badge text-bg-secondary">Ngừng hoạt động</span></td>
+                <td></td>
+            </tr>
+            <tr id="farmEmpty">
+                <td colspan="6">Không tìm thấy nhà yến phù hợp.</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Modal them nha yen -->
+<div class="modal fade" id="farmModal" tabindex="-1"
+     aria-labelledby="farmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content farm-modal">
+            <div class="modal-header">
+                <div>
+                    <div class="farm-eyebrow">SWIFTLETCARE</div>
+                    <h5 class="modal-title fw-bold" id="farmModalLabel">
+                        Thêm nhà yến mới
+                    </h5>
+                </div>
+                <button type="button" class="btn-close"
+                        data-bs-dismiss="modal" aria-label="Đóng"></button>
+            </div>
+
+            <form id="farmForm">
+                <div class="modal-body">
+                    <div class="alert alert-success small">
+                        Bạn đang thêm dữ liệu vào bản demo.
+                        Thông tin chưa được lưu vào cơ sở dữ liệu.
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="farmName" class="form-label">Tên nhà yến</label>
+                        <input type="text" id="farmName" class="form-control"
+                               placeholder="Ví dụ: Nhà yến An Phú" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="farmAddress" class="form-label">Địa chỉ</label>
+                        <input type="text" id="farmAddress" class="form-control"
+                               placeholder="Nhập địa chỉ nhà yến" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="farmAreas" class="form-label">Số khu vực</label>
+                        <input type="number" id="farmAreas" class="form-control"
+                               min="0" step="1" value="1" required>
+                    </div>
+
+                    <div>
+                        <label for="farmNewStatus" class="form-label">Trạng thái</label>
+                        <select id="farmNewStatus" class="form-select" required>
+                            <option value="Đang hoạt động">Đang hoạt động</option>
+                            <option value="Ngừng hoạt động">Ngừng hoạt động</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light"
+                            data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-farm-primary">
+                        + Thêm vào bản demo
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.farms-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+.farm-eyebrow {
+    color: #39815d;
+    font-size: 10px;
+    letter-spacing: 1.8px;
+    font-weight: 800;
+    margin-bottom: 8px;
+}
+.farms-heading h2 {
+    color: #203f31;
+    font-size: clamp(23px, 3vw, 30px);
+    font-weight: 800;
+    margin: 0 0 8px;
+}
+.farms-heading p { color: #78877d; margin: 0; font-size: 14px; }
+.btn-farm-primary {
+    background: #246b4a;
+    color: white;
+    border: 1px solid #246b4a;
+    padding: 11px 17px;
+    border-radius: 10px;
+    font-weight: 650;
+    box-shadow: 0 5px 12px #246b4a20;
+}
+.btn-farm-primary:hover { background: #194e35; color: white; }
+.add-symbol { font-size: 20px; vertical-align: -1px; margin-right: 5px; }
+
+.farm-banner {
+    position: relative;
+    overflow: hidden;
+    min-height: 205px;
+    display: flex;
+    align-items: center;
+    border-radius: 18px;
+    padding: 30px 34px;
+    color: white;
+    background: linear-gradient(105deg, #153f30 0%, #276849 57%, #80a87a 100%);
+}
+.farm-banner::after {
+    content: "";
+    position: absolute;
+    width: 250px;
+    height: 250px;
+    border: 1px solid #ffffff28;
+    border-radius: 50%;
+    right: 65px;
+    top: -110px;
+    box-shadow: 0 0 0 25px #ffffff09, 0 0 0 50px #ffffff08;
+}
+.farm-banner-content { position: relative; z-index: 1; }
+.banner-tag {
+    font-size: 10px;
+    letter-spacing: 2px;
+    font-weight: 750;
+    color: #d1e9cf;
+}
+.farm-banner h3 {
+    font-size: clamp(22px, 3vw, 29px);
+    font-weight: 800;
+    line-height: 1.35;
+    margin: 12px 0 8px;
+}
+.farm-banner p { color: #e1eee2; margin: 0; font-size: 13px; }
+.farm-banner-decoration {
+    position: absolute;
+    right: 12%;
+    bottom: -22px;
+    font-size: 130px;
+    opacity: .5;
+    transform: rotate(-15deg);
+}
+.farm-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    height: 100%;
+    padding: 20px;
+    background: white;
+    border: 1px solid #e6eee7;
+    border-radius: 15px;
+    box-shadow: 0 5px 18px #1a48330a;
+}
+.farm-stat-icon {
+    width: 52px;
+    height: 52px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    border-radius: 15px;
+    font-size: 24px;
+}
+.icon-green { background: #e8f4e8; }
+.icon-mint { background: #e4f5ee; }
+.icon-sand { background: #f7f0df; }
+.farm-stat-label { color: #7a897e; font-size: 12px; margin-bottom: 5px; }
+.farm-stat-card .stat-value { color: #244634; font-size: 27px; font-weight: 800; line-height: 1.2; }
+.farm-stat-card small { display: block; color: #9aa59c; font-size: 10px; margin-top: 5px; }
+
+.farm-toolbar {
+    display: flex;
+    gap: 16px;
+    align-items: end;
+    flex-wrap: wrap;
+    padding: 18px;
+    background: #fff;
+    border: 1px solid #e5ede6;
+    border-radius: 14px;
+}
+.farm-search-box { flex: 1; min-width: 220px; }
+.farm-filter-box { width: 230px; max-width: 100%; }
+.farm-toolbar label { display: block; color: #3d5545; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.search-input-wrap { position: relative; }
+.search-input-wrap > span {
+    position: absolute;
+    left: 12px;
+    top: 5px;
+    font-size: 25px;
+    color: #6d8a74;
+    line-height: 1;
+}
+.search-input-wrap .form-control { padding-left: 42px; }
+.farm-toolbar .form-control,
+.farm-toolbar .form-select,
+.farm-modal .form-control,
+.farm-modal .form-select {
+    border-color: #dce7dd;
+    border-radius: 9px;
+    min-height: 43px;
+}
+.farm-count-label {
+    background: #eaf5eb;
+    color: #39744d;
+    border-radius: 20px;
+    padding: 7px 11px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.farm-property-card {
+    height: 100%;
+    overflow: hidden;
+    background: white;
+    border: 1px solid #e5ede6;
+    border-radius: 16px;
+    box-shadow: 0 5px 18px #1a48330a;
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+.farm-property-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 14px 30px #1a483318;
+}
+.farm-photo {
+    position: relative;
+    height: 190px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #dcebd8, #a7c5a5);
+}
+.farm-photo::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(0deg, #102d1c50, transparent 55%);
+    pointer-events: none;
+}
+.farm-photo img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    transition: transform .35s ease;
+}
+.farm-property-card:hover .farm-photo img { transform: scale(1.045); }
+.farm-photo-badge {
+    position: absolute;
+    z-index: 1;
+    top: 13px;
+    left: 13px;
+    color: white;
+    background: #183f30d9;
+    border: 1px solid #ffffff4d;
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: .5px;
+}
+.farm-photo-emoji {
+    position: absolute;
+    z-index: 1;
+    right: 13px;
+    bottom: 8px;
+    font-size: 35px;
+    filter: drop-shadow(0 2px 5px #0004);
+}
+.farm-property-body { padding: 18px; }
+.farm-card-top { margin-bottom: 12px; }
+.farm-status-pill {
+    display: inline-block;
+    border-radius: 20px;
+    padding: 6px 9px;
+    font-size: 10px;
+    font-weight: 700;
+}
+.farm-status-pill.active { background: #e6f5e9; color: #267247; }
+.farm-status-pill.inactive { background: #eef0ee; color: #68766c; }
+.farm-property-body h5 {
+    color: #264633;
+    font-size: 17px;
+    font-weight: 800;
+    margin-bottom: 8px;
+}
+.farm-address-line {
+    color: #7e8c80;
+    font-size: 11px;
+    min-height: 18px;
+    margin-bottom: 17px;
+}
+.farm-card-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 14px 0;
+    border-top: 1px solid #edf1ed;
+    border-bottom: 1px solid #edf1ed;
+}
+.farm-card-details > div { display: grid; grid-template-columns: 23px 1fr; align-items: center; }
+.farm-card-details > div > span { grid-row: span 2; color: #48825c; font-size: 17px; }
+.farm-card-details small { color: #8a968c; font-size: 10px; }
+.farm-card-details strong { color: #405b47; font-size: 11px; margin-top: 3px; }
+.farm-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding-top: 14px;
+}
+.farm-card-footer .btn { font-size: 11px; border-radius: 8px; }
+.farm-no-results {
+    text-align: center;
+    padding: 42px 15px;
+    background: white;
+    border: 1px dashed #cfdfd1;
+    border-radius: 14px;
+    color: #7c8a7e;
+}
+.farm-no-results > div { font-size: 32px; margin-bottom: 8px; }
+.farm-no-results h5 { color: #365b42; font-weight: 750; }
+.farm-no-results p { font-size: 12px; margin-bottom: 0; }
+.farm-modal { border: 0; border-radius: 16px; overflow: hidden; }
+.farm-modal .modal-header { padding: 22px 24px; border-bottom-color: #edf1ed; }
+.farm-modal .modal-body { padding: 22px 24px; }
+.farm-modal .modal-footer { padding: 16px 24px 22px; border-top-color: #edf1ed; }
+.farm-modal .form-label { font-size: 12px; font-weight: 700; color: #3c5543; }
+@media (max-width: 575px) {
+    .farm-banner { min-height: 190px; padding: 24px; }
+    .farm-banner-decoration { right: -4px; font-size: 90px; opacity: .28; }
+    .farm-filter-box { width: 100%; }
+    .farm-photo { height: 200px; }
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const search = document.getElementById("farmSearch");
+    const status = document.getElementById("farmStatus");
+    const cards = Array.from(document.querySelectorAll(".farm-card-item"));
+    const noResults = document.getElementById("farmNoResults");
+    const countLabel = document.querySelector(".farm-count-label");
+
+    function filterCards() {
+        const keyword = search.value.trim().toLocaleLowerCase("vi");
+        const selectedStatus = status.value;
+        let visible = 0;
+
+        cards.forEach(function (card) {
+            const name = (card.dataset.name || "").toLocaleLowerCase("vi");
+            const address = (card.dataset.address || "").toLocaleLowerCase("vi");
+            const cardStatus = card.dataset.status || "";
+
+            const matchesText = (name + " " + address).includes(keyword);
+            const matchesStatus = !selectedStatus || cardStatus === selectedStatus;
+            const show = matchesText && matchesStatus;
+
+            card.hidden = !show;
+            if (show) visible++;
+        });
+
+        noResults.hidden = visible > 0;
+        countLabel.textContent = visible + " nhà yến";
+    }
+
+    search.addEventListener("input", filterCards);
+    status.addEventListener("change", filterCards);
+    filterCards();
+});
+</script>
+
+{% endblock %}

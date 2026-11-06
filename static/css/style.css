@@ -1,0 +1,210 @@
+﻿
+/* ===== CAI DAT CHUNG ===== */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: "Segoe UI", Arial, sans-serif;
+    background-color: #f4f7fb;
+    color: #243247;
+}
+
+a {
+    text-decoration: none;
+}
+
+/* ===== BO CUC CHINH ===== */
+.app-layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* ===== MENU BEN TRAI ===== */
+.sidebar {
+    width: 250px;
+    min-width: 250px;
+    background: #173b35;
+    color: white;
+    padding: 28px 16px 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.brand {
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    margin: 0 8px 8px;
+    color: #ffffff;
+}
+
+.sidebar-caption {
+    color: #a9c8bd;
+    font-size: 11px;
+    letter-spacing: 1.3px;
+    margin: 8px 8px 24px;
+}
+
+.sidebar .nav-link {
+    color: #d8e8e2;
+    padding: 12px 14px;
+    margin-bottom: 6px;
+    border-radius: 8px;
+    transition: background-color 0.2s;
+}
+
+.sidebar .nav-link:hover,
+.sidebar .nav-link.active {
+    color: #ffffff;
+    background: #2c5b50;
+}
+
+.sidebar-footer {
+    margin-top: auto;
+    padding: 20px 8px 0;
+    color: #a9c8bd;
+    font-size: 12px;
+}
+
+/* ===== KHU VUC NOI DUNG ===== */
+.main-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.topbar {
+    min-height: 88px;
+    background: #ffffff;
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 1px solid #e7ecf1;
+}
+
+.topbar h5 {
+    font-weight: 700;
+    color: #203c35;
+}
+
+.status-label {
+    background: #e4f5eb;
+    color: #237348;
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.page-content {
+    padding: 30px 32px;
+}
+
+/* ===== CAC THE THONG KE ===== */
+.stat-card {
+    background: #ffffff;
+    border: 1px solid #e8edf2;
+    border-radius: 12px;
+    padding: 22px;
+    height: 100%;
+    box-shadow: 0 3px 12px rgba(30, 55, 45, 0.04);
+}
+
+.stat-label {
+    color: #718096;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+.stat-value {
+    font-size: 30px;
+    font-weight: 700;
+    color: #203c35;
+}
+
+.stat-icon {
+    font-size: 25px;
+}
+
+/* ===== BANG DU LIEU ===== */
+.content-card {
+    background: #ffffff;
+    border: 1px solid #e8edf2;
+    border-radius: 12px;
+    padding: 22px;
+    box-shadow: 0 3px 12px rgba(30, 55, 45, 0.04);
+}
+
+.table thead th {
+    background: #f1f6f4;
+    color: #38554b;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+/* ===== FORM VA TRANG THAI ===== */
+.form-control,
+.form-select {
+    padding: 10px 12px;
+    border-color: #dce4e8;
+}
+
+.btn-primary {
+    background-color: #236b56;
+    border-color: #236b56;
+}
+
+.btn-primary:hover {
+    background-color: #194e40;
+    border-color: #194e40;
+}
+
+.empty-state {
+    padding: 36px 16px;
+    text-align: center;
+    color: #718096;
+}
+
+/* ===== RESPONSIVE CHO DIEN THOAI ===== */
+@media (max-width: 768px) {
+    .app-layout {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+        min-width: 0;
+        padding: 18px 14px;
+    }
+
+    .sidebar-caption,
+    .sidebar-footer {
+        display: none;
+    }
+
+    .sidebar .nav {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px;
+    }
+
+    .sidebar .nav-link {
+        margin-bottom: 0;
+        font-size: 13px;
+    }
+
+    .topbar {
+        padding: 18px;
+        flex-wrap: wrap;
+    }
+
+    .page-content {
+        padding: 20px 14px;
+    }
+}
