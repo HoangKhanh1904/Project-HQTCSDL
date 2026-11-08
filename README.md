@@ -1,5 +1,7 @@
 # SwiftletCare 🐦
 
+**Application đã tích hợp:** xem [hướng dẫn chạy và kiểm thử](docs/APPLICATION.md) cùng [báo cáo nghiệm thu](docs/TEST-REPORT.md). Quy trình hiện tại: nhánh công việc → `test` để kiểm tra application → `main` sau nghiệm thu.
+
 **Bài tập lớn môn Hệ quản trị cơ sở dữ liệu (HQTCSDL)**  
 **Đề tài:** Ứng dụng quản lý và giám sát nhà yến (SwiftletCare)  
 **Nhóm:** 4 thành viên
@@ -297,15 +299,15 @@ Mỗi thành viên chạy một SQL Server Container trên máy cá nhân.
 
 ### 6.12. Chạy ứng dụng Flask
 
-Sau khi nhóm hoàn thiện `app.py`, có thể chạy:
+Sau khi cấu hình `.env` và cài dependencies theo `docs/APPLICATION.md`, chạy:
 
 ```powershell
-.\.venv\Scripts\python.exe -m flask --app app run --debug
+.\.venv\Scripts\python.exe swiftletcare_backend/run.py
 ```
 
 Truy cập `http://127.0.0.1:5000`.
 
-Đây là lệnh dự kiến; chỉ sử dụng khi ứng dụng Flask đã được triển khai. Chế độ debug chỉ dành cho phát triển cục bộ.
+Lệnh này chạy ứng dụng local để kiểm thử; không bật debug.
 ## 7. Phân công nhóm 4 người
 
 | Thành viên | Vai trò chính | Công việc và sản phẩm bàn giao |
@@ -319,11 +321,11 @@ Truy cập `http://127.0.0.1:5000`.
 
 ## 8. Quy trình làm việc trên GitHub
 
-1. Trước khi code, cập nhật nhánh `main`:
+1. Trước khi code application, cập nhật nhánh tích hợp `test`:
 
    ```bash
-   git checkout main
-   git pull origin main
+   git checkout test
+   git pull origin test
    ```
 
 2. Tạo nhánh mới theo công việc:
@@ -341,7 +343,7 @@ Truy cập `http://127.0.0.1:5000`.
    git push -u origin feature/farm-management
    ```
 
-4. Trên GitHub, tạo **Pull Request** từ nhánh tính năng vào `main`, mô tả thay đổi và nhờ ít nhất một thành viên review.
+4. Trên GitHub, tạo **Pull Request** từ nhánh tính năng vào `test`, mô tả thay đổi và nhờ ít nhất một thành viên review. Chạy kiểm thử application trên `test`; chỉ mở PR `test` → `main` sau khi nghiệm thu.
 5. Không tự ý `force push` lên `main`. Khi có xung đột (merge conflict), trao đổi với người phụ trách phần code liên quan.
 
 **Quy ước commit gợi ý:**
@@ -424,4 +426,10 @@ Truy cập `http://127.0.0.1:5000`.
 
 **Repository:** <https://github.com/HoangKhanh1904/Project-HQTCSDL>  
 **Trạng thái:** Đang xây dựng — các phần chưa triển khai được ghi là *dự kiến* trong tài liệu.
+
+# Application tích hợp
+
+Hướng dẫn chạy Backend + Frontend + Analytics/QA, hợp đồng API và kiểm thử SQL Server/Flask/Chromium: **[docs/APPLICATION.md](docs/APPLICATION.md)**.
+
+Database tích hợp dùng nguyên bản `feature/database-upgrade` (`212466eb`). Xem điểm audit điều khiển còn tồn tại và báo cáo kiểm thử trong tài liệu trước khi đưa application vào `main`.
 
