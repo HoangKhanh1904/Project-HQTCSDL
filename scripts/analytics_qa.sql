@@ -65,7 +65,8 @@ GO
 
 -- =========================================
 -- PHAN 4: FUNCTION KIEM TRA MOI TRUONG
--- Dung nguong mau: 26-32 C, 70-90%
+-- Legacy demo only: fixed thresholds 26-32 C, 70-90%.
+-- Application uses per-Zone configuration and stored procedures, never this demo.
 -- =========================================
 
 CREATE OR ALTER FUNCTION dbo.fn_KiemTraMoiTruong
@@ -77,6 +78,11 @@ RETURNS NVARCHAR(20)
 AS
 BEGIN
     DECLARE @KetQua NVARCHAR(20);
+
+    IF @NhietDo IS NULL OR @DoAm IS NULL
+        RETURN N'Chưa có dữ liệu';
+    IF @NhietDo NOT BETWEEN -40 AND 100 OR @DoAm NOT BETWEEN 0 AND 100
+        RETURN N'Không hợp lệ';
 
     IF @NhietDo > 32 OR @NhietDo < 26
        OR @DoAm > 90 OR @DoAm < 70

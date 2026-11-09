@@ -1595,6 +1595,7 @@ BEGIN TRY
 
     -- Kiem tra dung database
     IF DB_NAME() <> 'SwiftletCare'
+       AND DB_NAME() NOT LIKE 'SwiftletCare[_]AppTest[_]%'
         THROW 51001,
             'QA01 FAIL: Sai database', 1;
 
