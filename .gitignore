@@ -2,7 +2,3 @@
 .venv/
 __pycache__/
 *.pyc
-.test-env.json
-.test-artifacts/
-.pytest_cache/
-*.log
