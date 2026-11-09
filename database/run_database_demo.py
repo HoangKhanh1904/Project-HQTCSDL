@@ -5,18 +5,18 @@ import datetime as dt
 import decimal
 import hashlib
 import json
+import sys
 import re
 import threading
 import time
 import uuid
 from pathlib import Path
 
+sys.dont_write_bytecode = True
 import pyodbc
 from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parent
-EVIDENCE_ROOT = ROOT.parent / "docs" / "database" / "runtime_evidence"
-EVIDENCE = EVIDENCE_ROOT
 TABLES = {
     "Users": "UserID", "SwiftletHouses": "HouseId", "Zones": "ZoneId",
     "Devices": "DeviceId", "SensorReadings": "ReadingId",
@@ -34,10 +34,9 @@ def serial(value):
 
 
 def save(name, value):
-    EVIDENCE.mkdir(parents=True, exist_ok=True)
-    (EVIDENCE / name).write_text(
-        json.dumps(value, ensure_ascii=False, indent=2, default=serial), encoding="utf-8"
-    )
+    """Report to the terminal only; do not create evidence/artifacts in the repo."""
+    if isinstance(value, dict) and value.get('status'):
+        print(name.rsplit('.', 1)[0], value['status'], flush=True)
 
 
 def connect(database="SwiftletCare"):
@@ -111,7 +110,9 @@ def snapshot(conn):
         rows = execute(conn, f"SELECT * FROM dbo.[{table}] ORDER BY [{pk}]")[0]["rows"]
         hashes = {
             str(row[pk]): hashlib.sha256(json.dumps(
-                {k:v for k,v in row.items() if not (k=="SourceEventId" and v is None)},
+                {k:v for k,v in row.items() if not (k in (
+                    "SourceEventId", "CO2Ppm", "LightLux", "ControlMode", "ExecutionKind"
+                ) and v is None)},
                 sort_keys=True, default=serial).encode()).hexdigest()
             for row in rows
         }
@@ -146,7 +147,7 @@ def deploy(conn):
         execute(conn, "RESTORE VERIFYONLY FROM DISK=? WITH CHECKSUM", (backup,))
         log["backup_verified"] = True
         save("deployment.json", log)
-        paths = ["create_tables.sql", "alter_table.sql", "runtime_migration.sql",
+        paths = ["create_tables.sql", "alter_table.sql", "runtime_migration.sql", "application_extension.sql",
                  "concurrency/sp_acknowledge_alert.sql", "concurrency/sp_get_environment_threshold.sql",
                  "concurrency/sp_update_environment_threshold.sql", "procedures/sp_transition_alert.sql"]
         paths += [str(p.relative_to(ROOT)).replace("\\", "/") for p in sorted((ROOT / "procedures").glob("*.sql")) if p.name != "sp_transition_alert.sql"]
