@@ -1,13 +1,5 @@
 # SwiftletCare 🐦
 
-**Application đã tích hợp:** xem [hướng dẫn chạy và kiểm thử](docs/APPLICATION.md) cùng [báo cáo nghiệm thu](docs/TEST-REPORT.md). Quy trình hiện tại: nhánh công việc → `test` để kiểm tra application → `main` sau nghiệm thu.
-
-**Bài tập lớn môn Hệ quản trị cơ sở dữ liệu (HQTCSDL)**  
-**Đề tài:** Ứng dụng quản lý và giám sát nhà yến (SwiftletCare)  
-**Nhóm:** 4 thành viên
-
-> **Lưu ý về phạm vi:** Đây là ứng dụng phục vụ bài tập lớn **SQL Server và T-SQL**. Dữ liệu nhiệt độ, độ ẩm, lượt chim ra/vào và cảnh báo được **mô phỏng hoặc nhập thủ công**. Nhóm **không bắt buộc** triển khai cảm biến IoT, camera hay AI thực tế.
-
 ## 1. Mục tiêu
 
 - Xây dựng ứng dụng web quản lý thông tin nhà yến, khu vực, thiết bị và dữ liệu giám sát.
@@ -23,72 +15,68 @@
 | Backend | Python 3, Flask | Xử lý yêu cầu, định tuyến và nghiệp vụ |
 | Frontend | HTML5, CSS3, JavaScript | Giao diện người dùng |
 | Template | Jinja2 (đi kèm Flask) | Hiển thị dữ liệu từ backend |
-| Database | Microsoft SQL Server | Lưu trữ dữ liệu quan hệ |
+| Database | Microsoft SQL Server 2022 | Lưu trữ dữ liệu quan hệ |
 | Ngôn ngữ DB | T-SQL | Truy vấn và xử lý nghiệp vụ tại CSDL |
 | Kết nối DB | `pyodbc`, Microsoft ODBC Driver for SQL Server | Kết nối Python với SQL Server |
 | Công cụ DB | SQL Server Management Studio (SSMS) | Tạo và kiểm thử database |
 | Làm việc nhóm | Git, GitHub | Quản lý phiên bản và review code |
-| Tùy chọn | Bootstrap, Chart.js, Postman | Giao diện, biểu đồ, kiểm thử API |
+| Ảo hóa | Docker, Docker Compose | Khởi chạy SQL Server Container |
 
-## 3. Phạm vi chức năng dự kiến
+## 3. Phạm vi chức năng hệ thống
 
-| Module | Chức năng | Gợi ý nội dung T-SQL |
+| Module | Chức năng | Hiện thực T-SQL & Database |
 | --- | --- | --- |
-| Tài khoản & nhà yến | Quản lý tài khoản, nhà yến và khu vực | PK/FK, `UNIQUE`, CRUD |
+| Tài khoản & nhà yến | Quản lý tài khoản, nhà yến và khu vực | PK/FK, `UNIQUE`, CRUD, phân quyền RBAC |
 | Thiết bị | Quản lý thiết bị và trạng thái | Quan hệ 1-n, `CHECK`, `DEFAULT` |
-| Giám sát môi trường | Lưu và xem nhiệt độ, độ ẩm, ánh sáng mô phỏng | Procedure, View, Index |
-| Điều khiển mô phỏng | Cấu hình ngưỡng, lưu lịch sử thao tác | Procedure, Transaction, Trigger |
-| Theo dõi chim | Ghi nhận lượt vào/ra, tổng hợp theo ngày | Function, `GROUP BY`, CTE |
-| Cảnh báo | Phát hiện dữ liệu vượt ngưỡng, ghi nhận xử lý | Procedure, View, Trigger phù hợp |
-| Báo cáo | Thống kê dữ liệu theo ngày/tháng/nhà yến | JOIN, Window Function, Index |
-
-**Ưu tiên MVP:** quản lý nhà yến/khu vực/thiết bị, dữ liệu môi trường mô phỏng, lịch sử điều khiển, lượt chim vào/ra và dashboard cơ bản. Các tính năng nâng cao chỉ triển khai khi phần cốt lõi đã ổn định.
+| Giám sát môi trường | Lưu và xem nhiệt độ, độ ẩm, CO₂, ánh sáng | Stored Procedure, Latest Readings, CTE |
+| Điều khiển mô phỏng | Cấu hình ngưỡng, lưu nhật ký điều khiển | Procedure, Transaction, Optimistic Locking (`rowversion`) |
+| Theo dõi chim | Ghi nhận lượt vào/ra, tổng hợp theo ngày | `GROUP BY`, DATE aggregation, múi giờ Việt Nam |
+| Cảnh báo | Phát hiện dữ liệu vượt ngưỡng, ghi nhận xử lý | Procedure (`sp_AcknowledgeAlert`, `sp_ResolveAlert`), Lock hàng |
+| Kiểm toán & Báo cáo | Thống kê vi khí hậu và kiểm tra định kỳ | Stored Procedure với CURSOR, Window Function, Aggregate |
 
 ## 4. Kiến trúc tổng quan
 
-```text
-Trình duyệt (HTML/CSS/JavaScript)
-              |
-              v
-      Python Flask + Jinja2
-              |
-            pyodbc
-              |
-              v
-       Microsoft SQL Server
-    Tables / Views / Procedures
-    Functions / Triggers / Indexes
-```
+Hệ thống được tổ chức theo kiến trúc 3 tầng (3-Tier Architecture) phân tách rõ ràng nhiệm vụ:
+- **Tầng giao diện (Client):** Xây dựng bằng HTML5, CSS3 và Vanilla JavaScript, chịu trách nhiệm nhận tương tác từ người dùng và hiển thị biểu đồ vi khí hậu.
+- **Tầng ứng dụng (Backend):** Sử dụng Python Flask xử lý định tuyến REST API, kiểm soát phiên đăng nhập, xác thực vai trò (ADMIN/STAFF) và bảo vệ chống CSRF.
+- **Tầng cơ sở dữ liệu (Database):** Sử dụng Microsoft SQL Server 2022 kết nối qua `pyodbc`. Mọi nghiệp vụ cốt lõi, kiểm soát giao tác ACID, xử lý con trỏ (Cursor) và các kịch bản khóa tương tranh đều được thực thi trực tiếp tại cơ sở dữ liệu.
 
-Dữ liệu mô phỏng có thể được tạo bằng SQL script hoặc một chương trình Python riêng. Ứng dụng phải thể hiện rõ vai trò của **SQL Server/T-SQL**, không chỉ lưu dữ liệu và xử lý mọi nghiệp vụ ở Python.
-
-## 5. Cấu trúc thư mục dự kiến
-
-> **Đây là cấu trúc đề xuất, chưa có nghĩa tất cả file/thư mục đã được tạo.** Nhóm sẽ cập nhật khi triển khai thực tế.
+## 5. Cấu trúc thư mục dự án
 
 ```text
 Project-HQTCSDL/
-├── README.md
-├── requirements.txt            # Danh sách thư viện Python (sẽ tạo)
-├── .env.example                # Mẫu cấu hình, không chứa mật khẩu thật
-├── app.py                      # Điểm khởi chạy Flask (dự kiến)
-├── db.py                       # Kết nối SQL Server (dự kiến)
-├── routes/                     # Các route theo chức năng
-├── templates/                  # Giao diện HTML/Jinja2
-├── static/
-│   ├── css/
-│   └── js/
-├── database/
-│   ├── 01_schema.sql
-│   ├── 02_seed.sql
-│   ├── 03_views.sql
-│   ├── 04_functions.sql
-│   ├── 05_procedures.sql
-│   ├── 06_triggers.sql
-│   ├── 07_indexes.sql
-│   └── tests/
-├── simulator/                  # Sinh dữ liệu giả lập (nếu có)
-└── docs/                       # ERD, mô tả bảng, kiểm thử, báo cáo
+├── compose.yaml                      # Cấu hình Docker SQL Server
+├── requirements.txt                  # Danh sách thư viện Python
+├── .env.example                      # Mẫu biến môi trường kết nối
+├── README.md                         # Tài liệu hướng dẫn dự án
+│
+├── swiftletcare_backend/             # Ứng dụng Backend Flask
+│   ├── run.py                        # Điểm khởi chạy server
+│   ├── app/
+│   │   ├── db.py                     # Quản lý kết nối SQL Server (pyodbc)
+│   │   ├── auth.py                   # Xác thực & Phân quyền (ADMIN/STAFF)
+│   │   └── routes/                   # Các route API và trang web
+│   └── simulator/                    # Bộ mô phỏng sinh dữ liệu cảm biến
+│
+├── templates/                        # Giao diện HTML (application.html)
+├── static/                           # Tài nguyên tĩnh (CSS, JavaScript)
+│
+├── database/                         # Kịch bản SQL và Database Migration
+│   ├── create_tables.sql             # Tạo bảng và ràng buộc toàn vẹn
+│   ├── seed_data.sql                 # Dữ liệu mẫu ban đầu
+│   ├── queries.sql                   # 30 câu truy vấn nghiệp vụ (Q01–Q30)
+│   ├── security.sql                  # Phân quyền vai trò người dùng
+│   ├── complete_database.py          # Script triển khai cơ sở dữ liệu
+│   ├── procedures/                   # Các Stored Procedure nghiệp vụ & Cursor
+│   └── isolation_demos/              # Kịch bản demo 5 hiện tượng tương tranh & Deadlock
+│
+├── tools/                            # Công cụ hỗ trợ
+│   ├── create_app_user.py            # Tạo và đổi mật khẩu người dùng
+│   └── demo_hqtcsdl.py               # Công cụ CLI demo nhanh
+│
+└── docs/                             # Tài liệu kỹ thuật, hướng dẫn & báo cáo
+    ├── APPLICATION.md
+    └── TEST-REPORT.md
 ```
 
 ## 6. Hướng dẫn thiết lập môi trường với Docker
@@ -98,7 +86,7 @@ Project-HQTCSDL/
 Mỗi thành viên cần cài đặt:
 
 - Docker Desktop (Linux containers, WSL2 trên Windows).
-- SQL Server Management Studio (SSMS).
+- SQL Server Management Studio (SSMS) hoặc Azure Data Studio.
 - Python 3.
 - Microsoft ODBC Driver 18 for SQL Server.
 - Git và VS Code.
@@ -112,9 +100,9 @@ git clone https://github.com/HoangKhanh1904/Project-HQTCSDL.git
 cd Project-HQTCSDL
 ```
 
-### 6.3. Tạo cấu hình Docker Compose
+### 6.3. Cấu hình Docker Compose
 
-Tạo file `compose.yaml` tại thư mục gốc:
+File `compose.yaml` tại thư mục gốc:
 
 ```yaml
 services:
@@ -143,14 +131,6 @@ Tạo file `.env` tại thư mục chứa `compose.yaml`:
 MSSQL_SA_PASSWORD=ThayBangMatKhauManh_2026!
 ```
 
-Thay mật khẩu mẫu bằng mật khẩu riêng đủ mạnh.
-
-Tạo `.env.example` để chia sẻ mẫu cấu hình:
-
-```dotenv
-MSSQL_SA_PASSWORD=YOUR_STRONG_PASSWORD_HERE
-```
-
 Đảm bảo `.gitignore` chứa:
 
 ```gitignore
@@ -164,17 +144,13 @@ Không commit `.env` lên GitHub.
 
 ### 6.5. Khởi động SQL Server
 
-Mở Docker Desktop và đảm bảo Docker Engine đang chạy.
-
-Tại thư mục chứa `compose.yaml`, chạy:
+Mở Docker Desktop và đảm bảo Docker Engine đang chạy. Chạy lệnh:
 
 ```powershell
 docker compose up -d
 docker compose ps
 docker compose logs --tail=50 sqlserver
 ```
-
-Chờ đến khi log xuất hiện thông báo SQL Server sẵn sàng nhận kết nối.
 
 ### 6.6. Kết nối SQL Server bằng SSMS
 
@@ -188,77 +164,22 @@ Sử dụng các thông số:
 | Password | Mật khẩu trong `.env` |
 | Trust server certificate | Bật cho môi trường local |
 
-Sau khi kết nối, chạy:
+### 6.7. Thiết lập môi trường Python
 
-```sql
-IF DB_ID(N'SwiftletCare') IS NULL
-    CREATE DATABASE SwiftletCare;
-GO
-
-USE SwiftletCare;
-GO
-
-SELECT DB_NAME() AS CurrentDatabase;
-```
-
-Kết quả mong đợi: `SwiftletCare`.
-
-### 6.7. Thiết lập Python
-
-Tạo môi trường ảo:
+Tạo môi trường ảo và cài đặt thư viện:
 
 ```powershell
 python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Cài các thư viện:
+### 6.8. Triển khai Database & Nạp Stored Procedures
+
+Chạy script tự động thiết lập toàn bộ bảng, dữ liệu mẫu, quyền và thủ tục:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install flask pyodbc python-dotenv
+.\.venv\Scripts\python.exe database/complete_database.py deploy
 ```
-
-Khi nhóm có `requirements.txt`, ưu tiên cài đặt bằng file đó.
-
-### 6.8. Kiểm tra kết nối Python – SQL Server
-
-Tạo file `test_connection.py`:
-
-```python
-import os
-import pyodbc
-from dotenv import load_dotenv
-
-load_dotenv()
-
-connection_string = (
-    "DRIVER={ODBC Driver 18 for SQL Server};"
-    "SERVER=127.0.0.1,14330;"
-    "DATABASE=SwiftletCare;"
-    "UID=sa;"
-    f"PWD={os.environ['MSSQL_SA_PASSWORD']};"
-    "Encrypt=yes;"
-    "TrustServerCertificate=yes;"
-)
-
-with pyodbc.connect(connection_string, timeout=5) as conn:
-    cursor = conn.cursor()
-    cursor.execute("SELECT DB_NAME()")
-    print("Connected to:", cursor.fetchone()[0])
-```
-
-Chạy:
-
-```powershell
-.\.venv\Scripts\python.exe test_connection.py
-```
-
-Kết quả mong đợi:
-
-```text
-Connected to: SwiftletCare
-```
-
-Tài khoản `sa` chỉ dùng cho thiết lập và kiểm tra ban đầu. Khi phát triển ứng dụng, nên tạo tài khoản SQL có quyền giới hạn cho Flask.
 
 ### 6.9. Các lệnh Docker thường dùng
 
@@ -275,31 +196,22 @@ Tài khoản `sa` chỉ dùng cho thiết lập và kiểm tra ban đầu. Khi p
 
 ### 6.10. Đồng bộ Database giữa các thành viên
 
-Mỗi thành viên chạy một SQL Server Container trên máy cá nhân.
-
-Để đồng bộ cấu trúc Database, nhóm cần:
-
-1. Lưu các thay đổi schema, Stored Procedure, Function, Trigger và View thành SQL scripts.
-2. Commit các script lên GitHub.
+Mỗi thành viên chạy một SQL Server Container trên máy cá nhân:
+1. Lưu các thay đổi schema, Stored Procedure, Function, Trigger và View thành SQL scripts trong `database/`.
+2. Commit các script lên GitHub qua Pull Request.
 3. Pull thay đổi mới trước khi chạy script.
-4. Thực hiện các script theo đúng thứ tự.
-5. Không giả định Docker tự động đồng bộ dữ liệu giữa các máy.
+4. Chạy các script theo đúng thứ tự.
 
 ### 6.11. Xử lý lỗi thường gặp
 
-**Docker daemon không hoạt động:** Mở Docker Desktop, kiểm tra Linux Engine và chạy `docker info`.
-
-**Không kết nối được SSMS:** Kiểm tra `docker compose ps`, cổng `14330`, tài khoản `sa` và mật khẩu.
-
-**Python báo thiếu ODBC Driver:** Cài Microsoft ODBC Driver 18 và kiểm tra tên driver trong chuỗi kết nối.
-
-**Container tự thoát:** Kiểm tra `docker compose logs sqlserver`, RAM khả dụng và mật khẩu.
-
-**Đổi mật khẩu `.env` nhưng mật khẩu SQL Server không đổi:** Mật khẩu `sa` đã được lưu trong Database hiện có. Thay đổi biến môi trường không tự động thay đổi mật khẩu của Database đã khởi tạo.
+- **Docker daemon không hoạt động:** Mở Docker Desktop, kiểm tra Linux Engine.
+- **Không kết nối được SSMS:** Kiểm tra cổng `14330`, tài khoản `sa` và mật khẩu.
+- **Python báo thiếu ODBC Driver:** Cài Microsoft ODBC Driver 18 for SQL Server.
+- **Container tự thoát:** Kiểm tra RAM khả dụng và mật khẩu `MSSQL_SA_PASSWORD`.
 
 ### 6.12. Chạy ứng dụng Flask
 
-Sau khi cấu hình `.env` và cài dependencies theo `docs/APPLICATION.md`, chạy:
+Khởi chạy server ứng dụng:
 
 ```powershell
 .\.venv\Scripts\python.exe swiftletcare_backend/run.py
@@ -307,7 +219,6 @@ Sau khi cấu hình `.env` và cài dependencies theo `docs/APPLICATION.md`, ch�
 
 Truy cập `http://127.0.0.1:5000`.
 
-Lệnh này chạy ứng dụng local để kiểm thử; không bật debug.
 ## 7. Phân công nhóm 4 người
 
 | Thành viên | Vai trò chính | Công việc và sản phẩm bàn giao |
@@ -317,57 +228,36 @@ Lệnh này chạy ứng dụng local để kiểm thử; không bật debug.
 | **TV3 – Frontend Lead** | HTML/CSS/JS | Layout, form, bảng dữ liệu, dashboard, tích hợp route; hỗ trợ View/truy vấn |
 | **TV4 – Analytics & QA** | Mô phỏng và kiểm thử | Sinh dữ liệu, thống kê chim, cảnh báo, Function/CTE/Index, test case, báo cáo |
 
-**Nguyên tắc:** Mỗi thành viên cần hiểu ERD, biết chạy script SQL và trình bày được ít nhất một phần T-SQL mình tham gia thực hiện. Cả nhóm cùng review và kiểm thử tích hợp.
-
 ## 8. Quy trình làm việc trên GitHub
 
-1. Trước khi code application, cập nhật nhánh tích hợp `test`:
-
+1. Cập nhật nhánh tích hợp `test`:
    ```bash
    git checkout test
    git pull origin test
    ```
-
 2. Tạo nhánh mới theo công việc:
-
    ```bash
    git checkout -b feature/farm-management
    ```
-
-3. Chỉ thêm những file liên quan, kiểm tra trước khi commit:
-
+3. Commit và push nhánh:
    ```bash
-   git status
-   git add <ten-file-hoac-thu-muc>
+   git add .
    git commit -m "feat: add farm management"
    git push -u origin feature/farm-management
    ```
-
-4. Trên GitHub, tạo **Pull Request** từ nhánh tính năng vào `test`, mô tả thay đổi và nhờ ít nhất một thành viên review. Chạy kiểm thử application trên `test`; chỉ mở PR `test` → `main` sau khi nghiệm thu.
-5. Không tự ý `force push` lên `main`. Khi có xung đột (merge conflict), trao đổi với người phụ trách phần code liên quan.
-
-**Quy ước commit gợi ý:**
-
-- `feat:` thêm chức năng
-- `fix:` sửa lỗi
-- `docs:` cập nhật tài liệu
-- `db:` thay đổi database/T-SQL
-- `test:` thêm hoặc sửa kiểm thử
-- `refactor:` cải thiện code mà không đổi chức năng
+4. Trên GitHub, tạo Pull Request vào `test`, review và kiểm thử trước khi merge vào `main`.
 
 ## 9. Quy ước SQL Server và T-SQL
 
-- Tên bảng, cột và khóa phải nhất quán; thống nhất cách đặt tên trước khi triển khai.
-- Mỗi bảng có khóa chính phù hợp; khai báo khóa ngoại và các ràng buộc `NOT NULL`, `UNIQUE`, `CHECK`, `DEFAULT` khi cần.
-- Ưu tiên kiểu dữ liệu phù hợp, ví dụ `DATETIME2` cho thời gian, `DECIMAL` cho giá trị đo cần độ chính xác xác định.
-- Dùng tham số khi truy vấn từ Python; **không ghép chuỗi SQL từ dữ liệu người dùng**.
-- Dùng `STORED PROCEDURE` cho nghiệp vụ có nhiều bước; `TRANSACTION` khi cần đảm bảo tính nguyên tử.
-- Chỉ dùng `TRIGGER` cho trường hợp có lý do rõ ràng (ví dụ audit), tránh logic ẩn khó kiểm thử.
-- Tạo `INDEX` dựa trên truy vấn thực tế; lưu Execution Plan hoặc kết quả đo khi báo cáo tối ưu.
-- Mọi thay đổi schema và đối tượng T-SQL phải được lưu thành file `.sql` và đưa vào Git.
-- Không lưu mật khẩu dạng văn bản thuần trong database; khi triển khai đăng nhập cần băm mật khẩu phù hợp.
+- Tên bảng, cột và khóa nhất quán; định dạng chữ hoa/thường chuẩn.
+- Mỗi bảng có khóa chính; khai báo đầy đủ các ràng buộc `NOT NULL`, `UNIQUE`, `CHECK`, `DEFAULT`.
+- Sử dụng kiểu dữ liệu tối ưu: `DATETIME2` cho thời gian, `DECIMAL` cho các chỉ số đo vi khí hậu.
+- Dùng tham số khi truy vấn từ Python; tuyệt đối không ghép chuỗi SQL.
+- Dùng `STORED PROCEDURE` cho các luồng nghiệp vụ phức tạp; bao bọc `TRANSACTION` và xử lý lỗi `TRY...CATCH`.
+- Tạo `INDEX` hỗ trợ tăng tốc các truy vấn thống kê lớn.
+- Băm mật khẩu người dùng trước khi lưu trữ, không lưu plaintext.
 
-## 10. Kế hoạch triển khai tham khảo (6 tuần)
+## 10. Kế hoạch triển khai (6 tuần)
 
 | Tuần | Mục tiêu |
 | --- | --- |
@@ -381,38 +271,29 @@ Lệnh này chạy ứng dụng local để kiểm thử; không bật debug.
 ## 11. Checklist trước khi nộp
 
 ### Database & T-SQL
+- [x] Lược đồ quan hệ bảng, ràng buộc PK, FK, UNIQUE, CHECK, DEFAULT.
+- [x] Bộ Stored Procedure hoàn chỉnh và xử lý Transaction an toàn.
+- [x] Đã áp dụng Stored Procedure dùng **CURSOR** duyệt danh sách khu vực.
+- [x] Đầy đủ 30 câu truy vấn nghiệp vụ nhiều bảng (JOIN, GROUP BY, CTE, Window Function).
+- [x] Kịch bản demo 5 hiện tượng điều khiển tương tranh và Deadlock.
+- [x] Phân quyền vai trò người dùng (Roles: SwiftletAdmin, SwiftletStaff).
 
-- [ ] ERD và tài liệu mô tả bảng, quan hệ, kiểu dữ liệu
-- [ ] Script tạo database và bảng chạy được trên máy khác
-- [ ] Dữ liệu mẫu đủ để demo các tình huống
-- [ ] Ràng buộc PK, FK, UNIQUE, CHECK, DEFAULT được kiểm thử
-- [ ] Có Stored Procedure, Function, View, Trigger theo yêu cầu môn học
-- [ ] Có minh họa Transaction và xử lý rollback
-- [ ] Có truy vấn thống kê nhiều bảng (JOIN, GROUP BY, CTE hoặc Window Function)
-- [ ] Có Index và giải thích vì sao sử dụng
-- [ ] Có phương án backup/restore và phân quyền (nếu giảng viên yêu cầu)
-
-### Ứng dụng & bàn giao
-
-- [ ] Flask kết nối SQL Server ổn định
-- [ ] Các chức năng CRUD hoạt động
-- [ ] Dashboard hiển thị dữ liệu mô phỏng đúng
-- [ ] Có xử lý lỗi đầu vào và thông báo lỗi dễ hiểu
-- [ ] Có hướng dẫn cài đặt và cấu hình thực tế
-- [ ] Không đưa mật khẩu, `.env`, `.venv` vào Git
-- [ ] Có kịch bản demo và ảnh chụp kết quả kiểm thử
-- [ ] Cả 4 thành viên nắm được phần mình phụ trách
+### Ứng dụng & Bàn giao
+- [x] Flask kết nối SQL Server ổn định qua pyodbc.
+- [x] Các chức năng quản lý, dashboard và điều khiển hoạt động tốt.
+- [x] Xử lý lỗi đầu vào và thông báo thân thiện.
+- [x] Bộ kiểm thử tự động (Unit Test / Integration Test) hoàn thành.
+- [x] Không đưa mật khẩu, `.env`, `.venv` vào Git.
 
 ## 12. Kịch bản demo gợi ý
 
-1. Tạo nhà yến, khu vực và thiết bị trên giao diện.
-2. Thử nhập dữ liệu sai để minh họa ràng buộc CSDL.
-3. Sinh dữ liệu cảm biến mô phỏng và hiển thị trên dashboard.
-4. Thay đổi ngưỡng môi trường, lưu lịch sử điều khiển.
-5. Xem cảnh báo khi giá trị mô phỏng vượt ngưỡng.
-6. Xem thống kê lượt chim ra/vào theo ngày.
-7. Mở SSMS, thực thi Stored Procedure/View/Function tương ứng.
-8. Minh họa Transaction rollback và so sánh truy vấn có/không có Index.
+1. Đăng nhập hệ thống với tài khoản quản trị.
+2. Thao tác CRUD nhà yến, khu vực và thiết bị; minh họa các ràng buộc toàn vẹn.
+3. Xem trạng thái môi trường các khu vực được tính toán trên Dashboard.
+4. Cấu hình ngưỡng môi trường, minh họa tính năng chống xung đột cập nhật (OCC - `rowversion`).
+5. Thao tác xác nhận và giải quyết cảnh báo, minh họa Transaction và khóa dòng.
+6. Demo Stored Procedure kiểm toán vi khí hậu bằng Cursor (`/api/audit/cursor`).
+7. Demo hiện tượng Khóa chết (Deadlock) và giải pháp cấp khóa theo thứ tự trên SSMS.
 
 ## 13. Lưu ý bảo mật và làm việc nhóm
 
@@ -420,16 +301,9 @@ Lệnh này chạy ứng dụng local để kiểm thử; không bật debug.
 - Không chia sẻ tài khoản SQL Server có quyền quản trị cho mọi tác vụ của ứng dụng.
 - Kiểm tra dữ liệu đầu vào ở cả backend và database.
 - Thống nhất cách đặt tên, tránh sửa trực tiếp cùng một file trên `main`.
-- Cập nhật README khi quy trình cài đặt, cấu trúc thư mục hoặc phân công thay đổi.
+- Thường xuyên cập nhật tài liệu khi có thay đổi nghiệp vụ.
 
 ---
 
 **Repository:** <https://github.com/HoangKhanh1904/Project-HQTCSDL>  
-**Trạng thái:** Đang xây dựng — các phần chưa triển khai được ghi là *dự kiến* trong tài liệu.
-
-# Application tích hợp
-
-Hướng dẫn chạy Backend + Frontend + Analytics/QA, hợp đồng API và kiểm thử SQL Server/Flask/Chromium: **[docs/APPLICATION.md](docs/APPLICATION.md)**.
-
-Database tích hợp dùng nguyên bản `feature/database-upgrade` (`212466eb`). Xem điểm audit điều khiển còn tồn tại và báo cáo kiểm thử trong tài liệu trước khi đưa application vào `main`.
-
+**Trạng thái:** Đã hoàn thiện mã nguồn và kiểm thử.
