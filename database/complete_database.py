@@ -18,9 +18,10 @@ DEPLOY_FILES = [
     "procedures/sp_get_sensor_history.sql", "procedures/sp_get_unresolved_alerts.sql",
     "procedures/sp_get_zone_dashboard.sql", "procedures/sp_bird_movements.sql",
     "procedures/sp_get_environment_metrics.sql", "procedures/sp_simulated_system_events.sql",
-    "procedures/sp_simulate_device_control.sql", "security.sql", "isolation_demos/setup.sql",
+    "procedures/sp_simulate_device_control.sql", "procedures/sp_audit_zone_sensors.sql", "security.sql", "isolation_demos/setup.sql",
     "isolation_demos/01_dirty_read.sql", "isolation_demos/02_nonrepeatable_read.sql",
     "isolation_demos/03_phantom_read.sql", "isolation_demos/04_lost_update.sql",
+    "isolation_demos/05_deadlock.sql",
 ]
 
 

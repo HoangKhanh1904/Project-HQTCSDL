@@ -1,9 +1,11 @@
 """Provision only a dedicated, labelled container. Never touches the user's SQL instance.
 
-Run from repository root. Credentials stay in ignored .test-env.json.
+Run from repository root. Credentials stay outside the repository in TEMP.
 """
 
 import json
+import os
+import tempfile
 import argparse
 import re
 import secrets
@@ -76,7 +78,12 @@ def main():
         help="Resume a dedicated container created by this script after a startup timeout.",
     )
     args = parser.parse_args()
-    config_path = ROOT / ".test-env.json"
+    config_path = Path(
+        os.environ.get(
+            "SWIFTLET_TEST_CONFIG",
+            Path(tempfile.gettempdir()) / "swiftletcare-test-env.json",
+        )
+    )
     if config_path.exists():
         print(
             "Dedicated test environment already configured; use tests without reprovisioning."

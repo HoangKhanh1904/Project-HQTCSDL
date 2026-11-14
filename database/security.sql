@@ -66,6 +66,8 @@ BEGIN TRY
     GRANT EXECUTE ON OBJECT::dbo.sp_GetSensorHistory TO SwiftletAdmin;
     GRANT EXECUTE ON OBJECT::dbo.sp_GetUnresolvedAlerts TO SwiftletAdmin;
     GRANT EXECUTE ON OBJECT::dbo.sp_GetZoneDashboard TO SwiftletAdmin;
+    IF OBJECT_ID('dbo.sp_AuditZoneSensorsWithCursor', 'P') IS NOT NULL
+        GRANT EXECUTE ON OBJECT::dbo.sp_AuditZoneSensorsWithCursor TO SwiftletAdmin;
 
     -- STAFF
     REVOKE SELECT, INSERT, UPDATE, DELETE ON SCHEMA::dbo FROM SwiftletStaff;

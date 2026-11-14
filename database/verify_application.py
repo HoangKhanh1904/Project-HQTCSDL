@@ -1,10 +1,4 @@
-"""Terminal-only verification; writes fixtures only in newly created test DBs.
 
-python -B database/verify_application.py --static
-python -B database/verify_application.py
-Keeps the isolated databases and verified server-side backup for inspection.
-Does not deploy changes to SwiftletCare; use complete_database.py deploy for that.
-"""
 import argparse
 import ast
 import re

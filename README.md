@@ -431,5 +431,5 @@ Lệnh này chạy ứng dụng local để kiểm thử; không bật debug.
 
 Hướng dẫn chạy Backend + Frontend + Analytics/QA, hợp đồng API và kiểm thử SQL Server/Flask/Chromium: **[docs/APPLICATION.md](docs/APPLICATION.md)**.
 
-Database tích hợp dùng nguyên bản `feature/database-upgrade` (`212466eb`). Xem điểm audit điều khiển còn tồn tại và báo cáo kiểm thử trong tài liệu trước khi đưa application vào `main`.
+Database tích hợp dựa trên `feature/database-upgrade` (`212466eb`); bản QA sửa procedure audit điều khiển, giữ nguyên schema và lịch sử cũ. Xem hợp đồng hiện tại trong `docs/APPLICATION.md`; `docs/TEST-REPORT.md` lưu kết quả lịch sử ngày 08/11/2026.
 
