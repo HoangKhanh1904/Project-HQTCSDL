@@ -5,7 +5,7 @@
 <body data-page="{{ page }}"><aside><a class="brand" href="/">🌿 SwiftletCare</a><p>KHÔNG GIAN QUẢN LÝ</p>
 <nav>{% for key,label in [('dashboard','Tổng quan'),('farms','Nhà yến'),('areas','Khu vực & ngưỡng'),('devices','Thiết bị'),('sensors','Dữ liệu cảm biến'),('alerts','Cảnh báo'),('birds','Lượt chim ra / vào'),('events','Sự kiện mô phỏng'),('controls','Điều khiển mô phỏng')] %}
 <a href="/{{ '' if key == 'dashboard' else key }}" {% if page==key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
-<small>Dữ liệu từ SQL Server<br>Điều khiển trong ứng dụng là mô phỏng.</small></aside>
+<small>Dữ liệu mô phỏng / nhập thủ công, lưu tại SQL Server.<br>Điều khiển trong ứng dụng là mô phỏng.</small></aside>
 <main><header><span>SWIFTLETCARE / APPLICATION</span><div id="account"></div></header>
 <div id="message" role="status" aria-live="polite">Đang kết nối…</div>
 <section id="loginPanel" hidden><h1>Đăng nhập</h1><p>Dùng tài khoản ứng dụng do quản trị viên cấp.</p><form id="loginForm"><label>Tên đăng nhập<input name="username" autocomplete="username" required maxlength="50"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required maxlength="255"></label><button>Đăng nhập</button></form></section>

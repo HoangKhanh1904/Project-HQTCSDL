@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 20
     env:
       PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      SWIFTLET_TEST_CONFIG: ${{ runner.temp }}/swiftletcare-test-env.json
+      SWIFTLET_TEST_ARTIFACTS: ${{ runner.temp }}/swiftletcare-test-artifacts
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,11 +43,11 @@ jobs:
       - name: Provision dedicated SQL Server
         run: python tools/prepare_application_tests.py
       - name: Real SQL Server, Flask, browser and concurrency tests
-        run: python -m pytest -q --junitxml=.test-artifacts/results.xml
+        run: python -m pytest -q -p no:cacheprovider --junitxml="$SWIFTLET_TEST_ARTIFACTS/results.xml"
       - name: Upload test evidence only
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: application-regression-evidence
-          path: .test-artifacts/
+          path: ${{ env.SWIFTLET_TEST_ARTIFACTS }}/
           retention-days: 7

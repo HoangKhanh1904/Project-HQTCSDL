@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import tempfile
 from pathlib import Path
 
 import pyodbc
@@ -15,7 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="session")
 def test_config():
-    path = ROOT / ".test-env.json"
+    path = Path(
+        os.environ.get(
+            "SWIFTLET_TEST_CONFIG",
+            Path(tempfile.gettempdir()) / "swiftletcare-test-env.json",
+        )
+    )
     if not path.exists():
         pytest.skip(
             "NOT RUN: prepare dedicated SQL Server with tools/prepare_application_tests.py"

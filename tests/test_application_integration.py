@@ -378,6 +378,149 @@ def test_api_invalid_filters(client):
         assert client.request("GET", path).status_code == 400, path
 
 
+@pytest.mark.parametrize("entity", ["farms", "areas", "devices"])
+def test_catalog_update_and_soft_delete_preserve_relations(
+    client, sql, fixture_data, entity
+):
+    f = fixture_data
+    identifier = f[{"farms": "house", "areas": "zone", "devices": "FAN"}[entity]]
+    name = "CRUD " + uuid.uuid4().hex[:12]
+    payload = {"name": name, "status": "ACTIVE"}
+    if entity == "farms":
+        payload.update(manager_id=f["manager"], address="Địa chỉ đã sửa")
+    elif entity == "areas":
+        payload.update(house_id=f["house"], description="Khu vực đã sửa")
+    else:
+        payload.update(zone_id=f["zone"], device_type="FAN")
+    client.data("PUT", f"/{entity}/{identifier}", json=payload)
+    found = client.data("GET", f"/{entity}", params={"search": name})
+    assert found["total"] == 1 and found["items"][0]["Status"] == "ACTIVE"
+    client.data("DELETE", f"/{entity}/{identifier}")
+    found = client.data(
+        "GET", f"/{entity}", params={"search": name, "status": "INACTIVE"}
+    )
+    assert found["total"] == 1
+    assert (
+        sql.execute(
+            "SELECT HouseId FROM dbo.Zones WHERE ZoneId=?", f["zone"]
+        ).fetchval()
+        == f["house"]
+    )
+    assert (
+        sql.execute(
+            "SELECT ZoneId FROM dbo.Devices WHERE DeviceId=?", f["FAN"]
+        ).fetchval()
+        == f["zone"]
+    )
+    assert (
+        client.request("PUT", f"/{entity}/2147483647", json=payload).status_code == 404
+    )
+
+
+@pytest.mark.parametrize("entity", ["farms", "areas", "devices"])
+def test_catalog_search_filter_and_pagination(sql, client, fixture_data, entity):
+    f = fixture_data
+    tag = "Tìm_%[" + uuid.uuid4().hex[:10]
+    for index in range(55):
+        name = f"{tag} {index:02}"
+        status = "INACTIVE" if index % 2 else "ACTIVE"
+        if entity == "farms":
+            sql.execute(
+                "INSERT dbo.SwiftletHouses(HouseName,ManagerId,Status) VALUES (?,?,?)",
+                name,
+                f["manager"],
+                status,
+            )
+        elif entity == "areas":
+            sql.execute(
+                "INSERT dbo.Zones(ZoneName,HouseId,Status) VALUES (?,?,?)",
+                name,
+                f["house"],
+                status,
+            )
+        else:
+            sql.execute(
+                "INSERT dbo.Devices(DeviceName,ZoneId,DeviceType,Status) VALUES (?,?,'FAN',?)",
+                name,
+                f["zone"],
+                status,
+            )
+    first = client.data("GET", f"/{entity}", params={"search": tag, "limit": 50})
+    second = client.data(
+        "GET", f"/{entity}", params={"search": tag, "limit": 50, "page": 2}
+    )
+    assert first["total"] == second["total"] == 55
+    assert len(first["items"]) == 50 and len(second["items"]) == 5
+    key = {"farms": "HouseId", "areas": "ZoneId", "devices": "DeviceId"}[entity]
+    assert not ({r[key] for r in first["items"]} & {r[key] for r in second["items"]})
+    active = client.data(
+        "GET", f"/{entity}", params={"search": tag, "status": "ACTIVE"}
+    )
+    assert active["total"] == 28 and all(
+        r["Status"] == "ACTIVE" for r in active["items"]
+    )
+    assert (
+        client.data("GET", f"/{entity}", params={"search": "' OR 1=1 --"})["total"] == 0
+    )
+    assert client.request("GET", f"/{entity}?status=BAD").status_code == 400
+
+
+def test_control_history_and_latest_auto(
+    client, sql, fixture_data, server, test_config
+):
+    f = fixture_data
+    path = f"/controls/{f['FAN']}"
+    client.data("POST", path, json={"action": "SET_MODE", "mode": "AUTO"})
+    ingest(server, test_config, "readings", reading(f, temperature=35))
+    auto = client.data("POST", path, json={"action": "AUTO"})
+    assert auto["IsOn"] is True and auto["StateChanged"] is True
+    client.data("POST", path, json={"action": "MANUAL", "is_on": False})
+    history = client.data(
+        "GET",
+        "/controls",
+        params={"view": "history", "device_id": f["FAN"], "limit": 1},
+    )
+    assert history["total"] == 2 and len(history["items"]) == 1
+    assert history["items"][0]["Command"] == "TURN_OFF"
+    assert history["items"][0]["ExecutionKind"] == "SIMULATED"
+    assert history["items"][0]["ExecuteAt"].endswith("+07:00")
+    older = client.data(
+        "GET",
+        "/controls",
+        params={"view": "history", "device_id": f["FAN"], "limit": 1, "page": 2},
+    )
+    assert older["items"][0]["Command"] == "TURN_ON"
+    assert (
+        client.data(
+            "GET",
+            "/controls",
+            params={"view": "history", "device_id": f["FAN"], "command": "TURN_ON"},
+        )["total"]
+        == 1
+    )
+    sql.execute(
+        "INSERT dbo.ControlLogs(DeviceId,UserId,Command,Result,ExecuteAt) VALUES (?,?,'TURN_ON','SUCCESS','2026-01-01T17:00:00')",
+        f["FAN"],
+        f["manager"],
+    )
+    old = client.data(
+        "GET",
+        "/controls",
+        params={
+            "view": "history",
+            "device_id": f["FAN"],
+            "from": "2026-01-02T00:00:00+07:00",
+            "to": "2026-01-03T00:00:00+07:00",
+        },
+    )
+    assert old["total"] == 1 and old["items"][0]["ExecutionKind"] is None
+    assert old["items"][0]["ExecuteAt"] == "2026-01-01T17:00:00+00:00"
+    assert (
+        client.request("GET", "/controls?view=history&command=BAD").status_code == 400
+    )
+    assert client.request("GET", "/controls?view=history&from=bad").status_code == 400
+
+
 def test_real_db_connection_failure_is_safe(client, monkeypatch):
     monkeypatch.setenv(
         "MSSQL_PORT", "14338"

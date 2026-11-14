@@ -1,4 +1,4 @@
-"""Application compatibility/QA; database source files remain unchanged."""
+"""Application compatibility and SQL Server regression checks."""
 
 import concurrent.futures
 import re
@@ -217,10 +217,6 @@ def test_manual_lock_wins_against_http_auto(
         sql.autocommit = True
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Existing database contract: SET_MODE writes TURN_ON/OFF although IsOn is unchanged. SQL source preserved at user request.",
-)
 def test_known_database_mode_only_audit(sql, client, fixture_data):
     f = fixture_data
     path = f"/controls/{f['FAN']}"
@@ -235,3 +231,55 @@ def test_known_database_mode_only_audit(sql, client, fixture_data):
         ).fetchval()
         == before
     )
+
+
+@pytest.mark.parametrize("kind", ["FAN", "HUMIDIFIER", "LIGHT"])
+@pytest.mark.parametrize("is_on", [False, True])
+def test_mode_and_state_changes_are_independent(sql, client, fixture_data, kind, is_on):
+    device = fixture_data[kind]
+    path = f"/controls/{device}"
+    initial = client.data("POST", path, json={"action": "MANUAL", "is_on": is_on})
+    assert initial["StateChanged"] == is_on
+    assert (initial["ControlLogId"] is not None) == is_on
+    before = sql.execute(
+        "SELECT COUNT(*) FROM dbo.ControlLogs WHERE DeviceId=?", device
+    ).fetchval()
+    for mode in ("AUTO", "MANUAL"):
+        result = client.data("POST", path, json={"action": "SET_MODE", "mode": mode})
+        assert result["IsOn"] == is_on
+        assert result["Changed"] is True and result["ModeChanged"] is True
+        assert result["StateChanged"] is False and result["ControlLogId"] is None
+        stamp = sql.execute(
+            "SELECT UpdatedAt FROM dbo.DeviceControlSettings WHERE DeviceId=?", device
+        ).fetchval()
+        repeat = client.data("POST", path, json={"action": "SET_MODE", "mode": mode})
+        assert repeat["ExecutionStatus"] == "NO_CHANGE" and repeat["Changed"] is False
+        assert repeat["ModeChanged"] is False and repeat["StateChanged"] is False
+        assert (
+            sql.execute(
+                "SELECT UpdatedAt FROM dbo.DeviceControlSettings WHERE DeviceId=?",
+                device,
+            ).fetchval()
+            == stamp
+        )
+    same = client.data("POST", path, json={"action": "MANUAL", "is_on": is_on})
+    assert same["ExecutionStatus"] == "NO_CHANGE"
+    assert (
+        sql.execute(
+            "SELECT COUNT(*) FROM dbo.ControlLogs WHERE DeviceId=?", device
+        ).fetchval()
+        == before
+    )
+    changed = client.data("POST", path, json={"action": "MANUAL", "is_on": not is_on})
+    assert changed["StateChanged"] is True and changed["ModeChanged"] is False
+    assert (
+        sql.execute(
+            "SELECT COUNT(*) FROM dbo.ControlLogs WHERE DeviceId=?", device
+        ).fetchval()
+        == before + 1
+    )
+    command = sql.execute(
+        "SELECT Command FROM dbo.ControlLogs WHERE ControlLogId=?",
+        changed["ControlLogId"],
+    ).fetchval()
+    assert command == ("TURN_OFF" if is_on else "TURN_ON")

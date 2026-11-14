@@ -57,7 +57,9 @@
     editing = null,
     selectedZone = null,
     rowVersion = null,
-    busy = false;
+    busy = false,
+    reloadPending = false,
+    defaultSensorPeriod = true;
   let houses = [],
     zones = [],
     devices = [],
@@ -129,6 +131,11 @@
     NEW: "Mới",
     AUTO: "Tự động",
     MANUAL: "Thủ công",
+    TURN_ON: "Bật",
+    TURN_OFF: "Tắt",
+    SIMULATED: "Mô phỏng",
+    SUCCESS: "Thành công",
+    FAILED: "Thất bại",
   };
   function value(v, key = "") {
     if (v === null || v === undefined) return "Chưa có dữ liệu";
@@ -282,7 +289,19 @@
           ...(page === "devices" ? [["MAINTENANCE", "Bảo trì"]] : []),
         ],
       });
-      filters.addEventListener("input", () => renderEntity());
+      if (page !== "farms")
+        field(filters, page === "areas" ? "house_id" : "zone_id", page === "areas" ? "Lọc nhà yến" : "Lọc khu vực", {
+          choices: [["", "Tất cả"], ...selectChoices(page === "areas" ? houses : zones, page === "areas" ? "HouseId" : "ZoneId", page === "areas" ? "HouseName" : "ZoneName")],
+        });
+      if (page === "devices")
+        field(filters, "device_type", "Lọc loại thiết bị", { choices: [["", "Tất cả"], ...["SENSOR", "FAN", "HUMIDIFIER", "LIGHT"].map((v) => [v, labels[v]])] });
+      let searchTimer;
+      filters.addEventListener("input", (event) => {
+        clearTimeout(searchTimer);
+        const apply = () => { pageNo = 1; load(); };
+        if (event.target.name === "search") searchTimer = setTimeout(apply, 250);
+        else apply();
+      });
       return;
     }
     if (page === "sensors") {
@@ -318,24 +337,60 @@
         ["to", "Đến (không bao gồm)"],
       ]) {
         const input = field(filters, k, label, { type: "datetime-local" });
+        if (page === "sensors") {
+          input.step = "0.001";
+          const manualPeriod = () => { defaultSensorPeriod = false; };
+          input.addEventListener("input", manualPeriod);
+          input.addEventListener("change", manualPeriod);
+          continue;
+        }
         const d = new Date(Date.now() - (k === "from" ? 86400000 : 0));
         input.value = new Date(d - d.getTimezoneOffset() * 60000)
           .toISOString()
           .slice(0, 16);
       }
+      updateSensorPeriod();
     }
-    if (["dashboard", "alerts", "controls"].includes(page)) {
+    if (page === "controls") {
+      const view = field(filters, "view", "Hiển thị", { choices: [["state", "Trạng thái hiện tại"], ["history", "Lịch sử điều khiển"]] });
+      field(filters, "device_id", "Lọc thiết bị", { choices: [["", "Tất cả"], ...selectChoices(devices.filter((d) => d.DeviceType !== "SENSOR"), "DeviceId", "DeviceName")] });
+      field(filters, "command", "Lệnh", { choices: [["", "Tất cả"], ["TURN_ON", "Bật"], ["TURN_OFF", "Tắt"]] });
+      field(filters, "mode", "Chế độ ghi trong nhật ký", { choices: [["", "Tất cả"], ["AUTO", "Tự động"], ["MANUAL", "Thủ công"]] });
+      for (const [key, label] of [["from", "Từ"], ["to", "Đến (không bao gồm)"]])
+        field(filters, key, label, { type: "datetime-local", required: false });
+      const updateHistoryFilters = () => {
+        filters.querySelectorAll("input,select").forEach((input) => {
+          if (input === view) return;
+          input.disabled = view.value !== "history";
+          input.parentElement.hidden = input.disabled;
+        });
+      };
+      view.addEventListener("change", updateHistoryFilters);
+      updateHistoryFilters();
+    }
+    if (["dashboard", "alerts"].includes(page)) {
       filters.hidden = true;
       return;
     }
-    filters.append(button("Áp dụng", () => load()));
+    filters.append(button("Áp dụng", () => { pageNo = 1; return load(); }));
+  }
+  function updateSensorPeriod() {
+    if (page !== "sensors" || !defaultSensorPeriod) return;
+    // The exclusive end includes the current millisecond, without rounding to
+    // a minute or extending the range beyond the clock's 1 ms precision.
+    const end = Date.now() + 1;
+    for (const [key, time] of [["from", end - 86400000], ["to", end]]) {
+      const date = new Date(time);
+      $("filters").querySelector(`[name=${key}]`).value =
+        new Date(time - date.getTimezoneOffset() * 60000).toISOString().slice(0, -1);
+    }
   }
   function params() {
     const p = new URLSearchParams();
     $("filters")
       .querySelectorAll("input,select")
       .forEach((i) => {
-        if (i.value)
+        if (i.value && !i.disabled)
           p.set(
             i.name,
             ["from", "to"].includes(i.name)
@@ -371,17 +426,7 @@
     $("count").textContent = `${records.length} dòng đang hiển thị`;
   }
   function renderEntity() {
-    const c = configs[page],
-      f = $("filters");
-    const term = (
-      f.querySelector("[name=search]").value || ""
-    ).toLocaleLowerCase("vi");
-    const status = f.querySelector("[name=status]").value;
-    const records = items.filter(
-      (r) =>
-        (!status || r.Status === status) &&
-        Object.values(r).join(" ").toLocaleLowerCase("vi").includes(term),
-    );
+    const c = configs[page], records = items;
     table(c.columns, records, (r) => [
       ...(user.Role === "ADMIN"
         ? [
@@ -403,7 +448,7 @@
         : []),
     ]);
     $("count").textContent =
-      `Trang ${pageNo} · ${records.length}/${items.length} dòng trang này · tổng ${total}`;
+      `Trang ${pageNo} · ${records.length} dòng · tổng ${total} kết quả phù hợp`;
   }
   async function threshold(zoneId) {
     selectedZone = zoneId;
@@ -520,13 +565,16 @@
       `${points.length} số đo · ${low} → ${high} · ${new Date(points[0].RecordeAt).toLocaleString("vi-VN")} → ${new Date(points.at(-1).RecordeAt).toLocaleString("vi-VN")}. Mỗi đường là một cảm biến. Tối đa 1000 số đo mới nhất trong khoảng lọc.`;
   }
   async function load() {
-    if (busy) return;
+    if (busy) { reloadPending = true; return; }
     busy = true;
     $("refresh").disabled = true;
     message("Đang tải dữ liệu…");
     try {
       if (configs[page]) {
-        const d = await api(`/${page}?page=${pageNo}&limit=${size}`);
+        const query = params();
+        query.set("page", pageNo);
+        query.set("limit", size);
+        const d = await api(`/${page}?${query}`);
         items = d.items;
         total = d.total;
         renderEntity();
@@ -564,6 +612,7 @@
           $("dashboardSummary").append(card);
         }
       } else if (page === "sensors") {
+        updateSensorPeriod();
         items = await api("/metrics?" + params());
         table(
           [
@@ -653,6 +702,16 @@
                 ],
         );
       } else if (page === "controls") {
+        if (params().get("view") === "history") {
+          const query = params();
+          query.set("page", pageNo);
+          query.set("limit", size);
+          const d = await api("/controls?" + query);
+          items = d.items;
+          total = d.total;
+          table([["ControlLogId", "Mã nhật ký"], ["DeviceId", "Mã thiết bị"], ["DeviceName", "Thiết bị"], ["UserName", "Người thao tác"], ["Command", "Lệnh"], ["ControlMode", "Chế độ"], ["ExecutionKind", "Nguồn"], ["Result", "Kết quả"], ["ExecuteAt", "Thời gian"]], items.map((r) => ({ ...r, ExecutionKind: r.ExecutionKind || "Lịch sử cũ: chưa xác định nguồn" })));
+          $("count").textContent = `Trang ${pageNo} · ${items.length} dòng · tổng ${total}`;
+        } else {
         items = await api("/controls");
         table(
           [
@@ -675,18 +734,22 @@
             button("Chế độ AUTO", () =>
               control(r, { action: "SET_MODE", mode: "AUTO" }),
             ),
-            button("Áp dụng AUTO", async () => {
-              const reading = prompt(
-                "Mã số đo mới nhất của cảm biến cùng khu vực:",
-              );
-              if (reading)
-                await control(r, { action: "AUTO", reading_id: reading });
+            button("Áp dụng AUTO", () => control(r, { action: "AUTO" })),
+            button("Lịch sử", async () => {
+              const filters = $("filters");
+              filters.querySelector("[name=view]").value = "history";
+              filters.querySelector("[name=view]").dispatchEvent(new Event("change"));
+              filters.querySelector("[name=device_id]").value = r.DeviceId;
+              pageNo = 1;
+              await load();
             }),
           ],
         );
+        }
       }
-      $("previous").disabled = !configs[page] || pageNo === 1;
-      $("next").disabled = !configs[page] || pageNo * size >= total;
+      const paged = configs[page] || (page === "controls" && params().get("view") === "history");
+      $("previous").disabled = !paged || pageNo === 1;
+      $("next").disabled = !paged || pageNo * size >= total;
       message(
         "Đã cập nhật từ SQL Server lúc " +
           new Date().toLocaleTimeString("vi-VN") +
@@ -704,11 +767,13 @@
     } finally {
       busy = false;
       $("refresh").disabled = false;
+      if (reloadPending) { reloadPending = false; load(); }
     }
   }
   async function control(r, data) {
-    await api("/controls/" + r.DeviceId, "POST", data);
+    const result = await api("/controls/" + r.DeviceId, "POST", data);
     await load();
+    message(result.ExecutionStatus === "NO_CHANGE" ? "Không có thay đổi trạng thái hoặc chế độ." : result.StateChanged ? "Đã đổi trạng thái mô phỏng và ghi nhật ký." : "Đã đổi chế độ; trạng thái bật/tắt giữ nguyên, không ghi lệnh bật/tắt.");
   }
   async function start() {
     try {
@@ -732,8 +797,8 @@
         page === "birds"
           ? "Thống kê lượt di chuyển; không phải tổng số chim đang cư trú."
           : page === "controls"
-            ? "Thay đổi trạng thái mô phỏng trong ứng dụng. Chưa kết nối phần cứng."
-            : "Theo dõi và quản lý dữ liệu nhà yến.";
+            ? "AUTO áp dụng theo yêu cầu trên số đo mô phỏng mới nhất cùng khu vực; không chạy nền. Nhật ký chỉ ghi thay đổi bật/tắt. LIGHT chưa có quy tắc AUTO."
+            : "Theo dõi và quản lý dữ liệu mô phỏng hoặc nhập thủ công của nhà yến.";
       if (page === "login") {
         location.replace("/");
         return;
@@ -771,12 +836,14 @@
   });
   $("refresh").addEventListener("click", () => load());
   $("previous").addEventListener("click", () => {
+    if (busy) return;
     if (pageNo > 1) {
       pageNo--;
       load();
     }
   });
   $("next").addEventListener("click", () => {
+    if (busy) return;
     pageNo++;
     load();
   });

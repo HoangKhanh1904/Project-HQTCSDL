@@ -24,11 +24,19 @@ def main():
     if len(password) < 12 or password != getpass.getpass("Nhập lại mật khẩu: "):
         parser.error("Mật khẩu quá ngắn hoặc không khớp.")
     with create_app().app_context():
-        db.query(
-            "INSERT dbo.Users(UserName,PasswordHash,FullName,Role) VALUES (?,?,?,?)",
-            [args.username, generate_password_hash(password), args.username, args.role],
-        )
-    print("Đã tạo tài khoản ứng dụng; không thay đổi tài khoản có sẵn.")
+        existing = db.query("SELECT UserID FROM dbo.Users WHERE UserName = ?", [args.username])
+        if existing:
+            db.query(
+                "UPDATE dbo.Users SET PasswordHash = ?, Role = ?, IsActive = 1 WHERE UserName = ?",
+                [generate_password_hash(password), args.role, args.username],
+            )
+            print(f"Đã cập nhật mật khẩu cho tài khoản '{args.username}' (Role: {args.role}).")
+        else:
+            db.query(
+                "INSERT dbo.Users(UserName,PasswordHash,FullName,Role) VALUES (?,?,?,?)",
+                [args.username, generate_password_hash(password), args.username, args.role],
+            )
+            print(f"Đã tạo tài khoản ứng dụng '{args.username}' (Role: {args.role}).")
 
 
 if __name__ == "__main__":

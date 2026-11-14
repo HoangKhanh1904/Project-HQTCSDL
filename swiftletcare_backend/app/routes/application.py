@@ -46,7 +46,7 @@ def limit():
     return value
 
 
-def period(required=False):
+def period(required=False, timezone=None):
     values = [request.args.get(k) for k in ("from", "to")]
     if not any(values) and not required:
         return None, None
@@ -59,7 +59,9 @@ def period(required=False):
     except ValueError:
         raise ApiError(400, "INVALID_INPUT", "Khoảng thời gian không hợp lệ.")
     return tuple(
-        d.astimezone(ZoneInfo(current_app.config["DB_TIMEZONE"])).replace(tzinfo=None)
+        d.astimezone(ZoneInfo(timezone or current_app.config["DB_TIMEZONE"])).replace(
+            tzinfo=None
+        )
         for d in dates
     )
 
@@ -218,7 +220,7 @@ ENTITIES = {
 def list_entity(entity):
     if entity not in ENTITIES:
         raise ApiError(404, "NOT_FOUND", "Không tìm thấy API.")
-    table, key, _, cols = ENTITIES[entity]
+    table, key, name, cols = ENTITIES[entity]
     page_no = query_id("page") or 1
     size = limit()
     parent = (
@@ -226,12 +228,48 @@ def list_entity(entity):
         if entity != "farms"
         else None
     )
-    where = (
-        " WHERE " + ("HouseId" if entity == "areas" else "ZoneId") + "=?"
-        if parent
-        else ""
-    )
-    params = [parent] if parent else []
+    clauses, params = [], []
+    if parent:
+        clauses.append(("HouseId" if entity == "areas" else "ZoneId") + "=?")
+        params.append(parent)
+    status = request.args.get("status")
+    if status:
+        allowed = (
+            {"ACTIVE", "INACTIVE", "MAINTENANCE"}
+            if entity == "devices"
+            else {"ACTIVE", "INACTIVE"}
+        )
+        clauses.append("Status=?")
+        params.append(choice({"status": status}, "status", allowed))
+    if entity == "devices" and request.args.get("device_type"):
+        clauses.append("DeviceType=?")
+        params.append(
+            choice(
+                request.args, "device_type", {"SENSOR", "FAN", "HUMIDIFIER", "LIGHT"}
+            )
+        )
+    term = text(request.args, "search", 255, False)
+    if term:
+        # Escape SQL LIKE metacharacters so a search is a literal substring.
+        escaped = (
+            term.replace("~", "~~")
+            .replace("%", "~%")
+            .replace("_", "~_")
+            .replace("[", "~[")
+        )
+        searchable = [name, f"CONVERT(nvarchar(20),{key})"]
+        searchable += (
+            ["Address", "CONVERT(nvarchar(20),ManagerId)"]
+            if entity == "farms"
+            else ["Description", "CONVERT(nvarchar(20),HouseId)"]
+            if entity == "areas"
+            else ["DeviceType", "CONVERT(nvarchar(20),ZoneId)"]
+        )
+        clauses.append(
+            "(" + " OR ".join(f"{col} LIKE ? ESCAPE '~'" for col in searchable) + ")"
+        )
+        params.extend(["%" + escaped + "%"] * len(searchable))
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
     records = db.query(
         f"SELECT {cols} FROM dbo.{table}{where} ORDER BY {key} DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
         params + [(page_no - 1) * size, size],
@@ -322,6 +360,14 @@ def dashboard():
         for r in raw
     ]
     return ok({"source": "SQL_SERVER", "zones": zones})
+
+
+@bp.get("/api/audit/cursor")
+@login_required
+def audit_cursor():
+    house_id = query_id("house_id")
+    raw = rows_proc("sp_AuditZoneSensorsWithCursor", {"HouseId": house_id})
+    return ok({"source": "T-SQL_CURSOR", "results": raw, "total": len(raw)})
 
 
 @bp.get("/api/metrics")
@@ -541,6 +587,50 @@ def event_status(event_id):
 @bp.get("/api/controls")
 @login_required
 def controls():
+    view = request.args.get("view", "state")
+    if view not in {"state", "history"}:
+        raise ApiError(400, "INVALID_INPUT", "view không hợp lệ.")
+    if view == "history":
+        clauses, params = [], []
+        for query, column in [("device_id", "l.DeviceId"), ("zone_id", "d.ZoneId")]:
+            identifier = query_id(query)
+            if identifier:
+                clauses.append(column + "=?")
+                params.append(identifier)
+        for query, column, allowed in [
+            ("command", "l.Command", {"TURN_ON", "TURN_OFF"}),
+            ("mode", "l.ControlMode", {"AUTO", "MANUAL"}),
+        ]:
+            if request.args.get(query):
+                clauses.append(column + "=?")
+                params.append(choice(request.args, query, allowed))
+        start, end = period(timezone="Asia/Ho_Chi_Minh")
+        if start is not None:
+            legacy_start, legacy_end = period()
+            clauses.append(
+                "((l.ExecutionKind='SIMULATED' AND l.ExecuteAt>=? AND l.ExecuteAt<?) OR (l.ExecutionKind IS NULL AND l.ExecuteAt>=? AND l.ExecuteAt<?))"
+            )
+            params += [start, end, legacy_start, legacy_end]
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        source = " FROM dbo.ControlLogs l JOIN dbo.Devices d ON d.DeviceId=l.DeviceId JOIN dbo.Users u ON u.UserID=l.UserId"
+        page_no, size = query_id("page") or 1, limit()
+        records = db.query(
+            "SELECT l.ControlLogId,l.DeviceId,d.DeviceName,d.ZoneId,l.UserId,u.UserName,l.Command,l.Result,l.ControlMode,l.ExecutionKind,l.ExecuteAt"
+            + source
+            + where
+            + " ORDER BY l.ControlLogId DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+            params + [(page_no - 1) * size, size],
+        )
+        # Legacy timestamps use DB_TIMEZONE; extension simulation logs use Vietnam.
+        for row in records:
+            if row["ExecutionKind"] == "SIMULATED":
+                row["ExecuteAt"] = (
+                    datetime.fromisoformat(row["ExecuteAt"])
+                    .replace(tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
+                    .isoformat()
+                )
+        total = db.query("SELECT COUNT_BIG(*) AS N" + source + where, params)[0]["N"]
+        return ok({"items": records, "total": total, "page": page_no, "limit": size})
     return ok(
         db.query(
             "SELECT d.DeviceId,d.DeviceName,d.ZoneId,d.DeviceType,s.ControlMode,s.IsOn,s.UpdatedAt FROM dbo.Devices d LEFT JOIN dbo.DeviceControlSettings s ON s.DeviceId=d.DeviceId WHERE d.DeviceType<>'SENSOR' ORDER BY d.DeviceId",
@@ -563,6 +653,21 @@ def control(device_id):
         params["IsOn"] = data["is_on"]
     else:
         value = data.get("reading_id")
+        if "reading_id" not in data:
+            devices = db.query(
+                "SELECT ZoneId FROM dbo.Devices WHERE DeviceId=?", [device_id]
+            )
+            if not devices:
+                raise ApiError(404, "DEVICE_NOT_FOUND", "Không tìm thấy thiết bị.")
+            latest = db.query(
+                "SELECT TOP (1) r.ReadingId FROM dbo.SensorReadings r JOIN dbo.Devices d ON d.DeviceId=r.DeviceId WHERE d.ZoneId=? AND d.DeviceType='SENSOR' AND d.Status='ACTIVE' ORDER BY r.RecordeAt DESC,r.ReadingId DESC",
+                [devices[0]["ZoneId"]],
+            )
+            if not latest:
+                raise ApiError(
+                    404, "READING_NOT_FOUND", "Chưa có số đo mô phỏng trong khu vực."
+                )
+            value = latest[0]["ReadingId"]
         try:
             if isinstance(value, bool) or not isinstance(value, (int, str)):
                 raise ValueError()

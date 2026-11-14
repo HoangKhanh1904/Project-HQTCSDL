@@ -10,7 +10,8 @@ BEGIN
     SET XACT_ABORT ON;
     DECLARE @Entry INT=@@TRANCOUNT,@Saved BIT=0,@Success BIT=0,@Code VARCHAR(32)='SYSTEM_ERROR',@ErrorNumber INT;
     DECLARE @ZoneId INT,@Type VARCHAR(30),@DeviceStatus VARCHAR(20),@ZoneStatus VARCHAR(20),
-        @OldMode VARCHAR(6),@OldOn BIT,@NewMode VARCHAR(6),@NewOn BIT,@Changed BIT=0,@ControlLogId BIGINT;
+        @OldMode VARCHAR(6),@OldOn BIT,@NewMode VARCHAR(6),@NewOn BIT,@Changed BIT=0,@ControlLogId BIGINT,
+        @ModeChanged BIT=0,@StateChanged BIT=0;
     DECLARE @SensorId INT,@SensorZone INT,@SensorType VARCHAR(30),@SensorStatus VARCHAR(20),
         @Temp DECIMAL(5,2),@Humidity DECIMAL(5,2),@ReadingTime DATETIME2,
         @MinT DECIMAL(5,2),@MaxT DECIMAL(5,2),@MinH DECIMAL(5,2),@MaxH DECIMAL(5,2);
@@ -71,7 +72,10 @@ BEGIN
             IF @Type='HUMIDIFIER'
                 SET @NewOn=CASE WHEN @Humidity<@MinH THEN 1 WHEN @Humidity>@MaxH THEN 0 ELSE @NewOn END;
         END;
-        IF @OldMode IS NULL OR @NewMode<>@OldMode OR @NewOn<>@OldOn
+        SET @ModeChanged=CASE WHEN @OldMode IS NULL OR @NewMode<>@OldMode THEN 1 ELSE 0 END;
+        -- A missing setting represents the default OFF state, not an OFF command.
+        SET @StateChanged=CASE WHEN @NewOn<>COALESCE(@OldOn,0) THEN 1 ELSE 0 END;
+        IF @ModeChanged=1 OR @StateChanged=1
         BEGIN
             IF @OldMode IS NULL
                 INSERT dbo.DeviceControlSettings(DeviceId,DeviceType,ControlMode,IsOn)
@@ -79,11 +83,15 @@ BEGIN
             ELSE
                 UPDATE dbo.DeviceControlSettings SET ControlMode=@NewMode,IsOn=@NewOn,UpdatedAt=DATEADD(HOUR,7,SYSUTCDATETIME())
                 WHERE DeviceId=@DeviceId;
-            -- SUCCESS means the SQL simulation state was applied. Metadata
-            -- distinguishes these rows from legacy commands/hardware claims.
+            SET @Changed=1;
+        END;
+        -- ControlLogs records actual ON/OFF transitions only. Mode-only changes
+        -- update settings atomically without inventing a hardware/state command.
+        IF @StateChanged=1
+        BEGIN
             INSERT dbo.ControlLogs(DeviceId,UserId,Command,Result,ControlMode,ExecutionKind)
             VALUES(@DeviceId,@UserId,CASE WHEN @NewOn=1 THEN 'TURN_ON' ELSE 'TURN_OFF' END,'SUCCESS',@NewMode,'SIMULATED');
-            SET @ControlLogId=CONVERT(BIGINT,SCOPE_IDENTITY()); SET @Changed=1;
+            SET @ControlLogId=CONVERT(BIGINT,SCOPE_IDENTITY());
         END;
         IF @Entry=0 COMMIT;
         SET @Success=1; SET @Code='OK';
@@ -98,11 +106,12 @@ BEGIN
     IF @Entry=0 AND XACT_STATE()<>0 ROLLBACK;
     ELSE IF @Saved=1 AND XACT_STATE()=1 ROLLBACK TRANSACTION SimControlSave;
     Result:
-    IF @Success=0 BEGIN SET @NewMode=NULL; SET @NewOn=NULL; SET @Changed=0; SET @ControlLogId=NULL; END;
+    IF @Success=0 BEGIN SET @NewMode=NULL; SET @NewOn=NULL; SET @Changed=0; SET @ControlLogId=NULL; SET @ModeChanged=0; SET @StateChanged=0; END;
     SET @ResultCode=@Code;
     SELECT @Success AS Success,@Code AS Code,@ErrorNumber AS ErrorNumber,@DeviceId AS DeviceId,
         @NewMode AS ControlMode,@NewOn AS IsOn,@Changed AS Changed,@ControlLogId AS ControlLogId,
         CAST('SIMULATED' AS VARCHAR(9)) AS ExecutionKind,
-        CASE WHEN @Success=0 THEN 'REJECTED' WHEN @Changed=1 THEN 'APPLIED' ELSE 'NO_CHANGE' END AS ExecutionStatus;
+        CASE WHEN @Success=0 THEN 'REJECTED' WHEN @Changed=1 THEN 'APPLIED' ELSE 'NO_CHANGE' END AS ExecutionStatus,
+        @ModeChanged AS ModeChanged,@StateChanged AS StateChanged;
 END;
 GO
