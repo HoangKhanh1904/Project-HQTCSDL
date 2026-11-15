@@ -1,4 +1,3 @@
-"""Run the database demo against the configured local Docker SQL Server."""
 
 import argparse
 import datetime as dt

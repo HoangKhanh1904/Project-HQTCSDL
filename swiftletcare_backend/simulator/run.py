@@ -22,6 +22,10 @@ import urllib.request
 import uuid
 from datetime import datetime, timezone
 from collections import Counter
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 MAX_DURATION = 3600
 # Khoảng giá trị mẫu: chỉnh cho khớp ngưỡng seed của TV1.
