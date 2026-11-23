@@ -1,8 +1,13 @@
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
-
-IF DB_NAME() NOT LIKE '%[_]QA' AND DB_NAME() NOT LIKE '%[_]Test'
-    THROW 53100,'QA only: database name must end in _QA or _Test.',1;
+IF DB_NAME() NOT LIKE '%[_]QA'
+   AND DB_NAME() NOT LIKE '%[_]Test'
+   AND NOT (
+       DB_NAME() LIKE 'SwiftletCare[_]AppTest[_]%'
+       AND LEN(DB_NAME()) = LEN('SwiftletCare_AppTest_') + 12
+       AND RIGHT(DB_NAME(), 12) NOT LIKE '%[^0-9a-f]%'
+   )
+    THROW 53100, 'QA database name is not allowed.', 1;
 
 DECLARE @Required TABLE (TableName SYSNAME PRIMARY KEY);
 INSERT @Required(TableName) VALUES
