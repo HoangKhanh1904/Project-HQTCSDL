@@ -1,291 +1,344 @@
-
-USE SwiftletCare;
+/*
+TV4 - nhanzza | SwiftletCare Analytics & QA
+Compatible with the baseline schema and database/application_extension.sql (2026).
+Deploy in the TARGET database (sqlcmd -d SwiftletCare_QA -i ...), NO USE statement.
+No DML, schema migration, procedure replacement, or hard-coded alert counts.
+All time windows are half-open [StartAt, EndAt); the database's RecordeAt
+is a legacy server-local timestamp; bird/event timestamps use Asia/Saigon.
+*/
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
 GO
 
--- =========================================
--- PHAN 1: THONG KE CAM BIEN
--- =========================================
-
-SELECT
-    d.DeviceId,
-    d.DeviceName,
-    COUNT(r.ReadingId) AS SoLanDo,
-    AVG(r.Temperature) AS NhietDoTrungBinh,
-    AVG(r.Humidity) AS DoAmTrungBinh
-FROM dbo.Devices AS d
-JOIN dbo.SensorReadings AS r
-    ON d.DeviceId = r.DeviceId
-GROUP BY d.DeviceId, d.DeviceName;
-GO
-
--- =========================================
--- PHAN 2: THONG KE CANH BAO
--- =========================================
-
-SELECT
-    AlertType AS LoaiCanhBao,
-    COUNT(*) AS SoLuong
-FROM dbo.Alerts
-GROUP BY AlertType
-ORDER BY SoLuong DESC;
-GO
-
--- =========================================
--- PHAN 3: CTE PHAT HIEN BAT THUONG
--- =========================================
-
-;WITH CanhBaoMoiTruong AS (
-    SELECT
-        h.HouseName,
-        z.ZoneName,
-        r.Temperature,
-        r.Humidity,
-        CASE
-            WHEN r.Temperature > t.MaxTemperature
-              OR r.Temperature < t.MinTemperature
-              OR r.Humidity > t.MaxHumidity
-              OR r.Humidity < t.MinHumidity
-            THEN N'Bất thường'
-            ELSE N'Bình thường'
-        END AS TrangThai
-    FROM dbo.SensorReadings AS r
-    JOIN dbo.Devices AS d
-        ON r.DeviceId = d.DeviceId
-    JOIN dbo.Zones AS z
-        ON d.ZoneId = z.ZoneId
-    JOIN dbo.SwiftletHouses AS h
-        ON z.HouseId = h.HouseId
-    JOIN dbo.EnvironmentThresholds AS t
-        ON z.ZoneId = t.ZoneId
-)
-SELECT *
-FROM CanhBaoMoiTruong
-WHERE TrangThai = N'Bất thường';
-GO
-
--- =========================================
--- PHAN 4: FUNCTION KIEM TRA MOI TRUONG
--- Legacy demo only: fixed thresholds 26-32 C, 70-90%.
--- Application uses per-Zone configuration and stored procedures, never this demo.
--- =========================================
-
+/* Retain legacy demo signature for callers; never use this fixed-threshold
+   teaching function in production analytics. */
 CREATE OR ALTER FUNCTION dbo.fn_KiemTraMoiTruong
 (
-    @NhietDo DECIMAL(5,2),
-    @DoAm DECIMAL(5,2)
-)
-RETURNS NVARCHAR(20)
-AS
-BEGIN
-    DECLARE @KetQua NVARCHAR(20);
-
-    IF @NhietDo IS NULL OR @DoAm IS NULL
-        RETURN N'Chưa có dữ liệu';
-    IF @NhietDo NOT BETWEEN -40 AND 100 OR @DoAm NOT BETWEEN 0 AND 100
-        RETURN N'Không hợp lệ';
-
-    IF @NhietDo > 32 OR @NhietDo < 26
-       OR @DoAm > 90 OR @DoAm < 70
-        SET @KetQua = N'Bất thường';
-    ELSE
-        SET @KetQua = N'Bình thường';
-
-    RETURN @KetQua;
-END;
-GO
--- PHAN 4B: KIEM TRA MOI TRUONG THEO ZONE
-
-CREATE OR ALTER FUNCTION dbo.fn_KiemTraMoiTruongTheoZone
-(
-    @ZoneId INT,
-    @NhietDo DECIMAL(5,2),
-    @DoAm DECIMAL(5,2)
+    @NhietDo DECIMAL(5,2), @DoAm DECIMAL(5,2)
 )
 RETURNS NVARCHAR(30)
 AS
 BEGIN
-    DECLARE @MinTemp DECIMAL(5,2);
-    DECLARE @MaxTemp DECIMAL(5,2);
-    DECLARE @MinHum DECIMAL(5,2);
-    DECLARE @MaxHum DECIMAL(5,2);
-
-    IF @ZoneId IS NULL
-        RETURN N'Chưa cấu hình';
-
-    IF @NhietDo IS NULL OR @DoAm IS NULL
-        RETURN N'Chưa có dữ liệu';
-
-    IF @NhietDo NOT BETWEEN -40 AND 100
-       OR @DoAm NOT BETWEEN 0 AND 100
-        RETURN N'Dữ liệu không hợp lệ';
-
-    SELECT
-        @MinTemp = MinTemperature,
-        @MaxTemp = MaxTemperature,
-        @MinHum = MinHumidity,
-        @MaxHum = MaxHumidity
-    FROM dbo.EnvironmentThresholds
-    WHERE ZoneId = @ZoneId;
-
-    IF @MinTemp IS NULL
-        RETURN N'Chưa cấu hình';
-
-    IF @NhietDo < @MinTemp OR @NhietDo > @MaxTemp
-       OR @DoAm < @MinHum OR @DoAm > @MaxHum
+    IF @NhietDo IS NULL OR @DoAm IS NULL RETURN N'Chưa có dữ liệu';
+    IF @NhietDo NOT BETWEEN -40 AND 100 OR @DoAm NOT BETWEEN 0 AND 100
+        RETURN N'Không hợp lệ';
+    IF @NhietDo NOT BETWEEN 26 AND 32 OR @DoAm NOT BETWEEN 70 AND 90
         RETURN N'Bất thường';
-
     RETURN N'Bình thường';
 END;
 GO
 
--- =========================================
--- PHAN 5: KIEM TRA INDEX
--- =========================================
-
-SELECT
-    OBJECT_NAME(object_id) AS TenBang,
-    name AS TenIndex,
-    type_desc AS LoaiIndex
-FROM sys.indexes
-WHERE name IN (
-    'IX_Readings_Device_Time',
-    'IX_Alerts_Zone_Status',
-    'IX_AlertActions_Alert_Time',
-    'UX_Readings_Device_Event'
+/* Multi-flag classifier: preserves simultaneous T/H violations. */
+CREATE OR ALTER FUNCTION dbo.fn_QAClassifyReading
+(
+    @Temperature DECIMAL(5,2), @Humidity DECIMAL(5,2),
+    @MinT DECIMAL(5,2), @MaxT DECIMAL(5,2),
+    @MinH DECIMAL(5,2), @MaxH DECIMAL(5,2)
 )
-ORDER BY TenBang;
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT
+        CASE WHEN @Temperature IS NULL OR @Humidity IS NULL THEN 'NO_DATA'
+             WHEN @Temperature NOT BETWEEN -40 AND 100 OR @Humidity NOT BETWEEN 0 AND 100
+                  THEN 'INVALID_INPUT'
+             WHEN @MinT IS NULL OR @MaxT IS NULL OR @MinH IS NULL OR @MaxH IS NULL
+                  THEN 'UNCONFIGURED'
+             WHEN @MinT > @MaxT OR @MinH > @MaxH THEN 'INVALID_THRESHOLD'
+             WHEN @Temperature < @MinT OR @Temperature > @MaxT
+                OR @Humidity < @MinH OR @Humidity > @MaxH THEN 'WARNING'
+             ELSE 'NORMAL' END AS EnvironmentStatus,
+        CONVERT(BIT, CASE WHEN @Temperature < @MinT THEN 1 ELSE 0 END) AS IsLowTemp,
+        CONVERT(BIT, CASE WHEN @Temperature > @MaxT THEN 1 ELSE 0 END) AS IsHighTemp,
+        CONVERT(BIT, CASE WHEN @Humidity < @MinH THEN 1 ELSE 0 END) AS IsLowHumidity,
+        CONVERT(BIT, CASE WHEN @Humidity > @MaxH THEN 1 ELSE 0 END) AS IsHighHumidity
+);
 GO
 
--- =========================================
--- PHAN 6: QA TEST CASES
--- =========================================
-
-
--- Cac Test Case cu da duoc chuyen sang
--- scripts/qa_tests.sql
--- Khong su dung so luong du lieu mau co dinh.
-GO
-
--- =========================================
--- PHAN 7: THONG KE LUOT CHIM IN / OUT
--- =========================================
-
-
--- =========================================
--- PHAN 7: THONG KE LUOT CHIM IN / OUT
--- =========================================
-
-IF OBJECT_ID('dbo.BirdMovementEvents', 'U') IS NOT NULL
+/* Keep the existing function name for backward compatibility. */
+CREATE OR ALTER FUNCTION dbo.fn_KiemTraMoiTruongTheoZone
+(
+    @ZoneId INT, @NhietDo DECIMAL(5,2), @DoAm DECIMAL(5,2)
+)
+RETURNS NVARCHAR(30)
+AS
 BEGIN
-    EXEC sys.sp_executesql N'
-        SELECT
-            h.HouseName AS TenNhaYen,
-            CAST(b.ObservedAt AS DATE) AS Ngay,
-            SUM(CASE WHEN b.Direction = ''IN''
-                THEN b.BirdCount ELSE 0 END) AS ChimVao,
-            SUM(CASE WHEN b.Direction = ''OUT''
-                THEN b.BirdCount ELSE 0 END) AS ChimRa,
-            SUM(CASE WHEN b.Direction = ''IN''
-                THEN b.BirdCount ELSE -b.BirdCount END)
-                AS ChenhLechLuot
-        FROM dbo.BirdMovementEvents b
-        JOIN dbo.SwiftletHouses h
-            ON b.HouseId = h.HouseId
-        WHERE b.SourceType = ''SIMULATED''
-        GROUP BY
-            h.HouseId,
-            h.HouseName,
-            CAST(b.ObservedAt AS DATE)
-        ORDER BY Ngay DESC, TenNhaYen;
-    ';
-END
-ELSE
-BEGIN
-    PRINT 'PHAN 7: NOT TESTED - Chua co BirdMovementEvents';
+    DECLARE @MinT DECIMAL(5,2), @MaxT DECIMAL(5,2),
+            @MinH DECIMAL(5,2), @MaxH DECIMAL(5,2), @State NVARCHAR(30);
+    IF @NhietDo IS NULL OR @DoAm IS NULL RETURN N'Chưa có dữ liệu';
+    IF @NhietDo NOT BETWEEN -40 AND 100 OR @DoAm NOT BETWEEN 0 AND 100
+        RETURN N'Dữ liệu không hợp lệ';
+    IF @ZoneId IS NULL RETURN N'Chưa cấu hình';
+    SELECT @MinT=MinTemperature, @MaxT=MaxTemperature,
+           @MinH=MinHumidity, @MaxH=MaxHumidity
+    FROM dbo.EnvironmentThresholds WHERE ZoneId=@ZoneId;
+    IF @MinT IS NULL OR @MaxT IS NULL OR @MinH IS NULL OR @MaxH IS NULL
+        RETURN N'Chưa cấu hình';
+    IF @MinT>@MaxT OR @MinH>@MaxH RETURN N'Dữ liệu không hợp lệ';
+    SET @State = CASE WHEN @NhietDo<@MinT OR @NhietDo>@MaxT
+                         OR @DoAm<@MinH OR @DoAm>@MaxH
+                      THEN N'Bất thường' ELSE N'Bình thường' END;
+    RETURN @State;
 END;
 GO
 
--- =========================================
--- PHAN 8: CTE SO DO MOI NHAT
--- =========================================
-
-;WITH LatestReading AS (
-    SELECT
-        DeviceId,
-        Temperature,
-        Humidity,
-        RecordeAt,
-        ROW_NUMBER() OVER (
-            PARTITION BY DeviceId
-            ORDER BY RecordeAt DESC, ReadingId DESC
-        ) AS rn
-    FROM dbo.SensorReadings
+/* History / abnormal CTE source. Requires application_extension.sql.
+   NULL CO2Ppm/LightLux denotes no measurement (never substitute 0). */
+CREATE OR ALTER FUNCTION dbo.fn_QAReadings
+(
+    @HouseId INT, @ZoneId INT, @DeviceId INT,
+    @StartAt DATETIME2, @EndAt DATETIME2
 )
-SELECT
-    d.DeviceId,
-    d.DeviceName,
-    z.ZoneName,
-    r.Temperature,
-    r.Humidity,
-    r.RecordeAt,
-    CASE
-        WHEN r.DeviceId IS NULL THEN N'NO_DATA'
-        WHEN t.ZoneId IS NULL THEN N'UNCONFIGURED'
-        ELSE dbo.fn_KiemTraMoiTruongTheoZone(
-            z.ZoneId, r.Temperature, r.Humidity
-        )
-    END AS TrangThai
-FROM dbo.Devices d
-JOIN dbo.Zones z ON d.ZoneId = z.ZoneId
-LEFT JOIN LatestReading r
-    ON d.DeviceId = r.DeviceId AND r.rn = 1
-LEFT JOIN dbo.EnvironmentThresholds t
-    ON z.ZoneId = t.ZoneId
-WHERE d.DeviceType = 'SENSOR'
-ORDER BY d.DeviceId;
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT h.HouseId, h.HouseName, z.ZoneId, z.ZoneName,
+           d.DeviceId, d.DeviceName, r.ReadingId, r.RecordeAt,
+           r.Temperature, r.Humidity, r.CO2Ppm, r.LightLux,
+           c.EnvironmentStatus, c.IsLowTemp, c.IsHighTemp,
+           c.IsLowHumidity, c.IsHighHumidity
+    FROM dbo.SensorReadings r
+    JOIN dbo.Devices d ON d.DeviceId=r.DeviceId AND d.DeviceType='SENSOR'
+    JOIN dbo.Zones z ON z.ZoneId=d.ZoneId
+    JOIN dbo.SwiftletHouses h ON h.HouseId=z.HouseId
+    LEFT JOIN dbo.EnvironmentThresholds t ON t.ZoneId=z.ZoneId
+    CROSS APPLY dbo.fn_QAClassifyReading(r.Temperature,r.Humidity,
+        t.MinTemperature,t.MaxTemperature,t.MinHumidity,t.MaxHumidity) c
+    WHERE (@HouseId IS NULL OR h.HouseId=@HouseId)
+      AND (@ZoneId IS NULL OR z.ZoneId=@ZoneId)
+      AND (@DeviceId IS NULL OR d.DeviceId=@DeviceId)
+      AND (@StartAt IS NULL OR r.RecordeAt>=@StartAt)
+      AND (@EndAt IS NULL OR r.RecordeAt<@EndAt)
+      AND (@StartAt IS NULL OR @EndAt IS NULL OR @StartAt<@EndAt)
+);
 GO
 
--- =========================================
--- PHAN 9: CTE XEP HANG CANH BAO
--- =========================================
-
-;WITH ThongKeCanhBao AS (
-    SELECT
-        h.HouseId,
-        h.HouseName,
-        z.ZoneId,
-        z.ZoneName,
-        COUNT(a.AlertId) AS SoCanhBao,
-        SUM(CASE
-            WHEN a.Status = 'PENDING' THEN 1
-            ELSE 0
-        END) AS SoChoXuLy
-    FROM dbo.SwiftletHouses h
-    JOIN dbo.Zones z
-        ON h.HouseId = z.HouseId
-    LEFT JOIN dbo.Alerts a
-        ON z.ZoneId = a.ZoneId
-    GROUP BY
-        h.HouseId,
-        h.HouseName,
-        z.ZoneId,
-        z.ZoneName
-),
-XepHang AS (
-    SELECT
-        *,
-        DENSE_RANK() OVER (
-            PARTITION BY HouseId
-            ORDER BY SoCanhBao DESC
-        ) AS HangCanhBao
-    FROM ThongKeCanhBao
+/* Latest reading per sensor. Sensors with no measurements remain visible.
+   Deterministic tie-break is ReadingId DESC. */
+CREATE OR ALTER FUNCTION dbo.fn_QALatestReadings
+(
+    @HouseId INT, @ZoneId INT, @DeviceId INT,
+    @StartAt DATETIME2, @EndAt DATETIME2
 )
-SELECT
-    HouseName,
-    ZoneName,
-    SoCanhBao,
-    SoChoXuLy,
-    HangCanhBao
-FROM XepHang
-ORDER BY HouseName, HangCanhBao, ZoneName;
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH Ranked AS (
+        SELECT r.DeviceId,r.ReadingId,r.RecordeAt,r.Temperature,r.Humidity,
+               r.CO2Ppm,r.LightLux,
+               ROW_NUMBER() OVER (PARTITION BY r.DeviceId
+                   ORDER BY r.RecordeAt DESC,r.ReadingId DESC) AS rn
+        FROM dbo.SensorReadings r
+        WHERE (@StartAt IS NULL OR r.RecordeAt>=@StartAt)
+          AND (@EndAt IS NULL OR r.RecordeAt<@EndAt)
+    )
+    SELECT h.HouseId,z.ZoneId,d.DeviceId,d.DeviceName,
+           r.ReadingId,r.RecordeAt,r.Temperature,r.Humidity,r.CO2Ppm,r.LightLux,
+           CASE WHEN r.ReadingId IS NULL THEN 'NO_DATA'
+                ELSE c.EnvironmentStatus END AS EnvironmentStatus,
+           c.IsLowTemp,c.IsHighTemp,c.IsLowHumidity,c.IsHighHumidity
+    FROM dbo.Devices d
+    JOIN dbo.Zones z ON z.ZoneId=d.ZoneId
+    JOIN dbo.SwiftletHouses h ON h.HouseId=z.HouseId
+    LEFT JOIN Ranked r ON r.DeviceId=d.DeviceId AND r.rn=1
+    LEFT JOIN dbo.EnvironmentThresholds t ON t.ZoneId=z.ZoneId
+    CROSS APPLY dbo.fn_QAClassifyReading(r.Temperature,r.Humidity,
+        t.MinTemperature,t.MaxTemperature,t.MinHumidity,t.MaxHumidity) c
+    WHERE d.DeviceType='SENSOR'
+      AND (@HouseId IS NULL OR h.HouseId=@HouseId)
+      AND (@ZoneId IS NULL OR z.ZoneId=@ZoneId)
+      AND (@DeviceId IS NULL OR d.DeviceId=@DeviceId)
+      AND (@StartAt IS NULL OR @EndAt IS NULL OR @StartAt<@EndAt)
+);
+GO
+
+/* Aggregate readings, including a sensor without readings. */
+CREATE OR ALTER FUNCTION dbo.fn_QAEnvironmentSummary
+(
+    @HouseId INT, @ZoneId INT, @DeviceId INT,
+    @StartAt DATETIME2, @EndAt DATETIME2
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT h.HouseId,z.ZoneId,d.DeviceId,d.DeviceName,
+           COUNT_BIG(r.ReadingId) AS ReadingCount,
+           AVG(CONVERT(DECIMAL(18,4),r.Temperature)) AS AvgTemperature,
+           MIN(r.Temperature) AS MinTemperature, MAX(r.Temperature) AS MaxTemperature,
+           AVG(CONVERT(DECIMAL(18,4),r.Humidity)) AS AvgHumidity,
+           MIN(r.Humidity) AS MinHumidity, MAX(r.Humidity) AS MaxHumidity,
+           AVG(CONVERT(DECIMAL(18,4),r.CO2Ppm)) AS AvgCO2Ppm,
+           AVG(CONVERT(DECIMAL(18,4),r.LightLux)) AS AvgLightLux,
+           MAX(r.RecordeAt) AS LastRecordedAt,
+           SUM(CASE WHEN c.EnvironmentStatus='WARNING' THEN CONVERT(BIGINT,1) ELSE CONVERT(BIGINT,0) END) AS AbnormalReadingCount,
+           CONVERT(DECIMAL(8,2),CASE WHEN COUNT_BIG(r.ReadingId)=0 THEN NULL
+               ELSE 100.0*SUM(CASE WHEN c.EnvironmentStatus='WARNING' THEN 1 ELSE 0 END)/COUNT_BIG(r.ReadingId) END) AS AbnormalRatePct,
+           CASE WHEN COUNT_BIG(r.ReadingId)=0 THEN 'NO_DATA'
+                WHEN t.ZoneId IS NULL THEN 'UNCONFIGURED'
+                WHEN SUM(CASE WHEN c.EnvironmentStatus='WARNING' THEN 1 ELSE 0 END)>0 THEN 'WARNING'
+                ELSE 'NORMAL' END AS SummaryStatus
+    FROM dbo.Devices d
+    JOIN dbo.Zones z ON z.ZoneId=d.ZoneId
+    JOIN dbo.SwiftletHouses h ON h.HouseId=z.HouseId
+    LEFT JOIN dbo.EnvironmentThresholds t ON t.ZoneId=z.ZoneId
+    LEFT JOIN dbo.SensorReadings r ON r.DeviceId=d.DeviceId
+        AND (@StartAt IS NULL OR r.RecordeAt>=@StartAt)
+        AND (@EndAt IS NULL OR r.RecordeAt<@EndAt)
+    CROSS APPLY dbo.fn_QAClassifyReading(r.Temperature,r.Humidity,
+        t.MinTemperature,t.MaxTemperature,t.MinHumidity,t.MaxHumidity) c
+    WHERE d.DeviceType='SENSOR'
+      AND (@HouseId IS NULL OR h.HouseId=@HouseId)
+      AND (@ZoneId IS NULL OR z.ZoneId=@ZoneId)
+      AND (@DeviceId IS NULL OR d.DeviceId=@DeviceId)
+      AND (@StartAt IS NULL OR @EndAt IS NULL OR @StartAt<@EndAt)
+    GROUP BY h.HouseId,z.ZoneId,d.DeviceId,d.DeviceName,t.ZoneId
+);
+GO
+
+/* Alerts count INCIDENTS, NOT number of abnormal readings. */
+CREATE OR ALTER FUNCTION dbo.fn_QAAlertSummary
+(
+    @HouseId INT, @ZoneId INT, @StartAt DATETIME2, @EndAt DATETIME2
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT h.HouseId,z.ZoneId,a.AlertType,a.Status,
+           CONVERT(DATE,a.CreatedAt) AS AlertDate,
+           COUNT_BIG(*) AS IncidentCount
+    FROM dbo.Alerts a
+    JOIN dbo.Zones z ON z.ZoneId=a.ZoneId
+    JOIN dbo.SwiftletHouses h ON h.HouseId=z.HouseId
+    WHERE (@HouseId IS NULL OR h.HouseId=@HouseId)
+      AND (@ZoneId IS NULL OR z.ZoneId=@ZoneId)
+      AND (@StartAt IS NULL OR a.CreatedAt>=@StartAt)
+      AND (@EndAt IS NULL OR a.CreatedAt<@EndAt)
+      AND (@StartAt IS NULL OR @EndAt IS NULL OR @StartAt<@EndAt)
+    GROUP BY h.HouseId,z.ZoneId,a.AlertType,a.Status,CONVERT(DATE,a.CreatedAt)
+);
+GO
+
+/* Bird events are local Asia/Saigon wall-clock; zero-traffic days included.
+   At most 3661 days; intentionally no fake resident bird estimates. */
+CREATE OR ALTER FUNCTION dbo.fn_QABirdDaily
+(
+    @HouseId INT, @StartAt DATETIME2, @EndAt DATETIME2,
+    @SourceType VARCHAR(10)
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH Dates AS (
+        SELECT TOP (
+            CASE WHEN @StartAt IS NULL OR @EndAt IS NULL OR @StartAt>=@EndAt
+                   OR DATEDIFF(DAY,@StartAt,@EndAt)>3660 THEN 0
+                 ELSE DATEDIFF(DAY,CONVERT(DATE,@StartAt),CONVERT(DATE,@EndAt))+1 END
+        ) ROW_NUMBER() OVER (ORDER BY a.object_id,b.object_id)-1 AS DayNo
+        FROM sys.all_objects a CROSS JOIN sys.all_objects b
+    ),
+    Calendar AS (
+        SELECT CONVERT(DATE,DATEADD(DAY,CONVERT(INT,DayNo),CONVERT(DATE,@StartAt))) AS ObservedDate
+        FROM Dates
+        WHERE DATEADD(DAY,CONVERT(INT,DayNo),CONVERT(DATE,@StartAt)) < @EndAt
+    ),
+    Aggregated AS (
+        SELECT b.HouseId,CONVERT(DATE,b.ObservedAt) AS ObservedDate,
+               SUM(CASE WHEN b.Direction='IN' THEN CONVERT(BIGINT,b.BirdCount) ELSE CONVERT(BIGINT,0) END) AS InCount,
+               SUM(CASE WHEN b.Direction='OUT' THEN CONVERT(BIGINT,b.BirdCount) ELSE CONVERT(BIGINT,0) END) AS OutCount,
+               COUNT_BIG(*) AS EventCount
+        FROM dbo.BirdMovementEvents b
+        WHERE b.ObservedAt>=@StartAt AND b.ObservedAt<@EndAt
+          AND (@HouseId IS NULL OR b.HouseId=@HouseId)
+          AND (@SourceType IS NULL OR b.SourceType=@SourceType)
+        GROUP BY b.HouseId,CONVERT(DATE,b.ObservedAt)
+    )
+    SELECT h.HouseId,h.HouseName,c.ObservedDate,
+           COALESCE(a.InCount,CONVERT(BIGINT,0)) AS InCount,
+           COALESCE(a.OutCount,CONVERT(BIGINT,0)) AS OutCount,
+           COALESCE(a.InCount,CONVERT(BIGINT,0))-COALESCE(a.OutCount,CONVERT(BIGINT,0)) AS NetMovement,
+           COALESCE(a.EventCount,CONVERT(BIGINT,0)) AS EventCount,
+           CONVERT(VARCHAR(32),'Asia/Saigon') AS TimeZone
+    FROM dbo.SwiftletHouses h CROSS JOIN Calendar c
+    LEFT JOIN Aggregated a ON a.HouseId=h.HouseId AND a.ObservedDate=c.ObservedDate
+    WHERE (@HouseId IS NULL OR h.HouseId=@HouseId)
+);
+GO
+
+CREATE OR ALTER FUNCTION dbo.fn_QASimulatedEventSummary
+(
+    @HouseId INT,@ZoneId INT,@StartAt DATETIME2,@EndAt DATETIME2
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT h.HouseId,e.ZoneId,e.EventType,e.Status,e.Severity,
+           CONVERT(DATE,e.EventAt) AS EventDate,COUNT_BIG(*) AS EventCount
+    FROM dbo.SimulatedSystemEvents e
+    JOIN dbo.SwiftletHouses h ON h.HouseId=e.HouseId
+    WHERE e.SourceType='SIMULATED'
+      AND (@HouseId IS NULL OR e.HouseId=@HouseId)
+      AND (@ZoneId IS NULL OR e.ZoneId=@ZoneId)
+      AND (@StartAt IS NULL OR e.EventAt>=@StartAt)
+      AND (@EndAt IS NULL OR e.EventAt<@EndAt)
+      AND (@StartAt IS NULL OR @EndAt IS NULL OR @StartAt<@EndAt)
+    GROUP BY h.HouseId,e.ZoneId,e.EventType,e.Status,e.Severity,CONVERT(DATE,e.EventAt)
+);
+GO
+
+/* Runnable analytics examples; adjust these variables to filter.
+   History CTE and ranking CTE are genuine business queries. */
+DECLARE @HouseId INT=NULL,@ZoneId INT=NULL,@DeviceId INT=NULL;
+DECLARE @StartAt DATETIME2=DATEADD(DAY,-7,SYSDATETIME()), @EndAt DATETIME2=SYSDATETIME();
+IF @StartAt>=@EndAt THROW 53001,'Invalid analytics time window',1;
+
+SELECT * FROM dbo.fn_QAEnvironmentSummary(@HouseId,@ZoneId,@DeviceId,@StartAt,@EndAt)
+ORDER BY HouseId,ZoneId,DeviceId;
+
+SELECT * FROM dbo.fn_QALatestReadings(@HouseId,@ZoneId,@DeviceId,@StartAt,@EndAt)
+ORDER BY HouseId,ZoneId,DeviceId;
+
+;WITH AbnormalHistory AS (
+    SELECT * FROM dbo.fn_QAReadings(@HouseId,@ZoneId,@DeviceId,@StartAt,@EndAt)
+    WHERE EnvironmentStatus='WARNING'
+)
+SELECT ReadingId,ZoneId,DeviceId,RecordeAt,Temperature,Humidity,
+       IsLowTemp,IsHighTemp,IsLowHumidity,IsHighHumidity
+FROM AbnormalHistory ORDER BY RecordeAt DESC,ReadingId DESC;
+
+SELECT * FROM dbo.fn_QAAlertSummary(@HouseId,@ZoneId,@StartAt,@EndAt)
+ORDER BY IncidentCount DESC,ZoneId,AlertType,Status;
+
+;WITH ZoneIncidentCounts AS (
+    SELECT h.HouseId,h.HouseName,z.ZoneId,z.ZoneName,
+           COUNT_BIG(a.AlertId) AS IncidentCount,
+           SUM(CASE WHEN a.Status='PENDING' THEN CONVERT(BIGINT,1) ELSE CONVERT(BIGINT,0) END) AS PendingCount,
+           SUM(CASE WHEN a.Status='RESOLVED' THEN CONVERT(BIGINT,1) ELSE CONVERT(BIGINT,0) END) AS ResolvedCount
+    FROM dbo.Zones z
+    JOIN dbo.SwiftletHouses h ON h.HouseId=z.HouseId
+    LEFT JOIN dbo.Alerts a ON a.ZoneId=z.ZoneId
+        AND (@StartAt IS NULL OR a.CreatedAt>=@StartAt)
+        AND (@EndAt IS NULL OR a.CreatedAt<@EndAt)
+    WHERE (@HouseId IS NULL OR h.HouseId=@HouseId)
+      AND (@ZoneId IS NULL OR z.ZoneId=@ZoneId)
+    GROUP BY h.HouseId,h.HouseName,z.ZoneId,z.ZoneName
+), RankedZones AS (
+    SELECT *,DENSE_RANK() OVER(PARTITION BY HouseId ORDER BY IncidentCount DESC) AS RankInHouse
+    FROM ZoneIncidentCounts
+)
+SELECT * FROM RankedZones ORDER BY HouseId,RankInHouse,ZoneId;
+
+-- Bird times are Asia/Saigon; use explicit day boundaries instead of server-local SYSDATETIME.
+DECLARE @BirdStart DATETIME2=CONVERT(DATE,DATEADD(DAY,-6,DATEADD(HOUR,7,SYSUTCDATETIME())));
+DECLARE @BirdEnd DATETIME2=DATEADD(DAY,7,@BirdStart);
+SELECT * FROM dbo.fn_QABirdDaily(@HouseId,@BirdStart,@BirdEnd,'SIMULATED')
+ORDER BY HouseId,ObservedDate;
+SELECT * FROM dbo.fn_QASimulatedEventSummary(@HouseId,@ZoneId,@BirdStart,@BirdEnd)
+ORDER BY HouseId,ZoneId,EventDate;
 GO
