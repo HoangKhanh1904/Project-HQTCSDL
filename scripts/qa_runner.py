@@ -286,6 +286,44 @@ def test_18(c):
             'QA18 missing SIMULATED label')
 
 
+def test_19(c):
+    # P0 (nhanh update_application): audit mode-only thanh test tu dong.
+    # Doi ControlMode (SET_MODE) khi IsOn khong doi thi KHONG duoc ghi log
+    # TURN_ON/TURN_OFF gia vao dbo.ControlLogs. Chi khi trang thai ON/OFF
+    # thuc su doi (MANUAL/AUTO) thi moi ghi log. Fixture rieng, rollback
+    # sau khi kiem tra (runner rollback moi test).
+    f = fixture(c, sensor=False)
+    dev = insert_id(c, "INSERT dbo.Devices(ZoneId,DeviceName,DeviceType) OUTPUT inserted.DeviceId VALUES (?,N'QA19 fan','FAN')", f['zone'])
+    # SP yeu cau zone/device ACTIVE; dat ro de khong phu thuoc gia tri mac dinh.
+    c.execute("UPDATE dbo.Zones SET Status='ACTIVE' WHERE ZoneId=?", f['zone'])
+    c.execute("UPDATE dbo.Devices SET Status='ACTIVE' WHERE DeviceId=?", dev)
+    # Trang thai ban dau: MANUAL, OFF.
+    c.execute("INSERT dbo.DeviceControlSettings(DeviceId,DeviceType,ControlMode,IsOn) VALUES (?,N'FAN',N'MANUAL',0)", dev)
+    before = scalar(c, 'SELECT COUNT(*) FROM dbo.ControlLogs WHERE DeviceId=?', dev)
+    # 1. Doi mode MANUAL -> AUTO, IsOn khong doi (van OFF).
+    out = one(c, """EXEC dbo.sp_SimulateDeviceControl
+        @DeviceId=?,@UserId=?,@Action='SET_MODE',@ControlMode='AUTO'""",
+        dev, f['user'])
+    require(out['Success'] == 1 and out['Code'] == 'OK'
+            and out['ModeChanged'] == 1 and out['StateChanged'] == 0,
+            'QA19 SET_MODE must report ModeChanged=1/StateChanged=0: ' + str(out))
+    require(scalar(c, 'SELECT COUNT(*) FROM dbo.ControlLogs WHERE DeviceId=?', dev) == before,
+            'QA19 mode-only change wrote a fake TURN_ON/TURN_OFF log')
+    row = one(c, 'SELECT ControlMode,IsOn FROM dbo.DeviceControlSettings WHERE DeviceId=?', dev)
+    require(row['ControlMode'] == 'AUTO' and row['IsOn'] == 0,
+            'QA19 settings not AUTO/OFF: ' + str(row))
+    # 2. Kiem chung duong: MANUAL bat len thi PHAI ghi dung 1 log TURN_ON.
+    out = one(c, """EXEC dbo.sp_SimulateDeviceControl
+        @DeviceId=?,@UserId=?,@Action='MANUAL',@IsOn=1""",
+        dev, f['user'])
+    require(out['Success'] == 1 and out['Code'] == 'OK' and out['StateChanged'] == 1,
+            'QA19 MANUAL ON must report StateChanged=1: ' + str(out))
+    require(scalar(c, 'SELECT COUNT(*) FROM dbo.ControlLogs WHERE DeviceId=?', dev) == before + 1,
+            'QA19 MANUAL ON did not write exactly one log')
+    require(scalar(c, "SELECT COUNT(*) FROM dbo.ControlLogs WHERE DeviceId=? AND Command='TURN_ON'", dev) == 1,
+            'QA19 TURN_ON log missing')
+
+
 def test_23(c):
     content=(SQL_DIR/'qa_tests.sql').read_text(encoding='utf-8-sig')
     batches=re.split(r'(?im)^\s*GO\s*(?:--[^\n]*)?$',content)
@@ -320,10 +358,10 @@ AUTOMATED={
     1:test_01,2:test_02,3:test_03,4:test_04,5:test_05,6:test_06,
     7:test_07,8:test_08,9:test_09,10:test_10,11:test_11,12:test_12,
     13:test_13,14:test_14,15:test_15,16:test_16,17:test_17,18:test_18,
+    19:test_19,
     23:test_23,25:test_25,
 }
 MANUAL={
-    19:'AUTO/MANUAL mode must be checked via actual control procedure, log and UI',
     20:'Use separate STAFF/ADMIN/Ingest logins; never simulate permissions with an admin connection',
     21:'Two simultaneous SQL sessions must race to ACK a committed QA incident',
     22:'Two independent sessions must demonstrate stale RowVer (CONCURRENCY_CONFLICT)',
@@ -332,12 +370,12 @@ MANUAL={
 
 
 def main():
-    p=argparse.ArgumentParser(description='TV4 SQL QA (20 automated + 5 NOT TESTED/manual)')
+    p=argparse.ArgumentParser(description='TV4 SQL QA (21 automated + 4 NOT TESTED/manual)')
     p.add_argument('--strict',action='store_true',help='non-zero if any NOT TESTED')
     args=p.parse_args()
     connection_string=os.getenv('QA_CONN_STR')
     if not connection_string:
-        print('Set QA_CONN_STR to a SQL Server ODBC connection string to your *_QA / *_Test database.',file=sys.stderr)
+        print('Set QA_CONN_STR to a SQL Server ODBC connection string to your *_QA or *_Test database.',file=sys.stderr)
         return 2
     summary=Counter()
     print('TV4 QA | started at',datetime.now().isoformat(timespec='seconds'))
