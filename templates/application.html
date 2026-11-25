@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SwiftletCare · Quản lý nhà yến</title><link rel="stylesheet" href="{{ url_for('static',filename='css/application.css') }}">
+<script defer src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 <script defer src="{{ url_for('static',filename='js/application.js') }}"></script></head>
 <body data-page="{{ page }}"><aside><a class="brand" href="/">🌿 SwiftletCare</a><p>KHÔNG GIAN QUẢN LÝ</p>
 <nav>{% for key,label in [('dashboard','Tổng quan'),('farms','Nhà yến'),('areas','Khu vực & ngưỡng'),('devices','Thiết bị'),('sensors','Dữ liệu cảm biến'),('alerts','Cảnh báo'),('birds','Lượt chim ra / vào'),('events','Sự kiện mô phỏng'),('controls','Điều khiển mô phỏng')] %}

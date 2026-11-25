@@ -719,6 +719,14 @@
     await api("/controls/" + r.DeviceId, "POST", data);
     await load();
   }
+  // P2: nhan dashboard_update qua Socket.IO; mat ket noi thi polling 2s van chay.
+  function startRealtime() {
+    if (!window.io) return;
+    const socket = io({ transports: ["websocket", "polling"] });
+    socket.on("dashboard_update", () => {
+      if (!document.hidden) load();
+    });
+  }
   async function start() {
     try {
       const state = await api("/auth");
@@ -752,10 +760,12 @@
       editor();
       filterSetup();
       await load();
-      if (["dashboard", "alerts", "events", "controls"].includes(page))
+      if (["dashboard", "alerts", "events", "controls"].includes(page)) {
         setInterval(() => {
           if (!document.hidden) load();
-        }, 10000);
+        }, 2000);
+        startRealtime();
+      }
     } catch (err) {
       message(err.message, true);
     }

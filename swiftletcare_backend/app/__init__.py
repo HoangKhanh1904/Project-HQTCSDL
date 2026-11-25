@@ -4,10 +4,13 @@ from pathlib import Path
 from datetime import timedelta
 
 from flask import Flask
+from flask_socketio import SocketIO
 from werkzeug.exceptions import HTTPException
 
 from . import db
 from .responses import ApiError, fail, ok  # noqa: F401
+
+socketio = SocketIO()
 
 
 def create_app(test_config=None):
@@ -36,6 +39,16 @@ def create_app(test_config=None):
 
     logging.basicConfig(level=logging.INFO)
     db.init_app(app)
+
+    # P2: Socket.IO dung eventlet (deploy hien tai chay truc tiep bang
+    # python run.py nen chi can doi cach khoi dong server, khong can cau hinh
+    # worker nhu khi dung gunicorn/Docker).
+    socketio.init_app(
+        app,
+        async_mode="eventlet",
+        cors_allowed_origins=["http://127.0.0.1:5000", "http://localhost:5000"],
+    )
+    from . import realtime  # noqa: F401 - registers Socket.IO handlers
 
     from .routes import health, simulator
 
