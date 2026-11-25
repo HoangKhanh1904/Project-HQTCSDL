@@ -30,6 +30,8 @@ SOURCE_FILES=[
     'database/procedures/sp_simulated_system_events.sql',
     'database/procedures/sp_simulate_device_control.sql',
     'scripts/analytics_qa.sql',
+    'database/concurrency/sp_get_environment_threshold.sql',
+'database/procedures/sp_create_environment_threshold.sql',
 ]
 
 
