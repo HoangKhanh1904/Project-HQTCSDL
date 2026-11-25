@@ -3,6 +3,7 @@ GO
 CREATE OR ALTER PROCEDURE dbo.sp_CreateEnvironmentThreshold
     @ZoneId INT,@MinTemperature DECIMAL(5,2),@MaxTemperature DECIMAL(5,2),
     @MinHumidity DECIMAL(5,2),@MaxHumidity DECIMAL(5,2),@UserId INT,
+    @MinLightLux DECIMAL(9,2)=NULL,@MaxLightLux DECIMAL(9,2)=NULL,
     @ResultCode VARCHAR(32)=NULL OUTPUT
 AS
 BEGIN
@@ -11,7 +12,8 @@ BEGIN
     DECLARE @EntryTranCount INT=@@TRANCOUNT,@SavepointCreated BIT=0,@LockedZone INT;
     DECLARE @Success BIT=0,@Code VARCHAR(32)='SYSTEM_ERROR',@Message NVARCHAR(255),@ErrorNumber INT;
     DECLARE @Changed TABLE(ThresholdsId INT,ZoneId INT,MinTemperature DECIMAL(5,2),MaxTemperature DECIMAL(5,2),
-        MinHumidity DECIMAL(5,2),MaxHumidity DECIMAL(5,2),UpdatedAt DATETIME2,RowVer BINARY(8));
+        MinHumidity DECIMAL(5,2),MaxHumidity DECIMAL(5,2),MinLightLux DECIMAL(9,2),MaxLightLux DECIMAL(9,2),
+        UpdatedAt DATETIME2,RowVer BINARY(8));
     BEGIN TRY
         IF @EntryTranCount=0 BEGIN TRANSACTION;
         ELSE BEGIN SAVE TRANSACTION CreateThresholdSave; SET @SavepointCreated=1; END;
@@ -22,6 +24,11 @@ BEGIN
            OR @MinTemperature NOT BETWEEN -40 AND 100 OR @MaxTemperature NOT BETWEEN -40 AND 100
            OR @MinHumidity NOT BETWEEN 0 AND 100 OR @MaxHumidity NOT BETWEEN 0 AND 100
            OR @MinTemperature>@MaxTemperature OR @MinHumidity>@MaxHumidity
+           -- Ngưỡng sáng: cả hai NULL là "chưa cấu hình", không được truyền lẻ một cột.
+           OR (@MinLightLux IS NULL AND @MaxLightLux IS NOT NULL)
+           OR (@MinLightLux IS NOT NULL AND @MaxLightLux IS NULL)
+           OR @MinLightLux NOT BETWEEN 0 AND 200000 OR @MaxLightLux NOT BETWEEN 0 AND 200000
+           OR @MinLightLux>@MaxLightLux
         BEGIN
             SET @Code='VALIDATION_ERROR'; SET @Message=N'Giá trị ngưỡng không hợp lệ.'; GOTO BusinessFailure;
         END;
@@ -40,10 +47,12 @@ BEGIN
         END;
 
         -- INSERT
-        INSERT dbo.EnvironmentThresholds(ZoneId,MinTemperature,MaxTemperature,MinHumidity,MaxHumidity)
+        INSERT dbo.EnvironmentThresholds(ZoneId,MinTemperature,MaxTemperature,MinHumidity,MaxHumidity,
+                                         MinLightLux,MaxLightLux)
         OUTPUT inserted.ThresholdsId,inserted.ZoneId,inserted.MinTemperature,inserted.MaxTemperature,
-               inserted.MinHumidity,inserted.MaxHumidity,inserted.UpdateAt,inserted.RowVer INTO @Changed
-        VALUES (@ZoneId,@MinTemperature,@MaxTemperature,@MinHumidity,@MaxHumidity);
+               inserted.MinHumidity,inserted.MaxHumidity,inserted.MinLightLux,inserted.MaxLightLux,
+               inserted.UpdateAt,inserted.RowVer INTO @Changed
+        VALUES (@ZoneId,@MinTemperature,@MaxTemperature,@MinHumidity,@MaxHumidity,@MinLightLux,@MaxLightLux);
         IF @EntryTranCount=0 COMMIT;
         SET @Success=1; SET @Code='OK'; SET @Message=N'Đã tạo cấu hình ngưỡng.';
     END TRY
@@ -63,7 +72,8 @@ BEGIN
     Result:
     SET @ResultCode=@Code;
     SELECT @Success AS Success,@Code AS Code,@Message AS Message,@ErrorNumber AS ErrorNumber,
-           @ZoneId AS ZoneId,c.ThresholdsId,c.MinTemperature,c.MaxTemperature,c.MinHumidity,c.MaxHumidity,c.UpdatedAt,c.RowVer
+           @ZoneId AS ZoneId,c.ThresholdsId,c.MinTemperature,c.MaxTemperature,c.MinHumidity,c.MaxHumidity,
+           c.MinLightLux,c.MaxLightLux,c.UpdatedAt,c.RowVer
     FROM (VALUES(1)) r(N) LEFT JOIN @Changed c ON @Success=1;
 END;
 GO

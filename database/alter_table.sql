@@ -51,6 +51,56 @@ BEGIN TRY
     )
         THROW 52003, N'RowVer phải có kiểu ROWVERSION.', 1;
 
+    -- P1: ngưỡng ánh sáng cho quy tắc LIGHT AUTO. Không có giá trị mặc định:
+    -- hàng cũ giữ cả hai cột NULL, nghĩa là "chưa cấu hình ngưỡng sáng".
+    IF COL_LENGTH('dbo.EnvironmentThresholds', 'MinLightLux') IS NULL
+        EXEC sys.sp_executesql N'ALTER TABLE dbo.EnvironmentThresholds ADD MinLightLux DECIMAL(9,2) NULL;';
+
+    IF COL_LENGTH('dbo.EnvironmentThresholds', 'MaxLightLux') IS NULL
+        EXEC sys.sp_executesql N'ALTER TABLE dbo.EnvironmentThresholds ADD MaxLightLux DECIMAL(9,2) NULL;';
+
+    IF EXISTS (
+        SELECT 1 FROM sys.columns
+        WHERE object_id = OBJECT_ID('dbo.EnvironmentThresholds')
+          AND name IN ('MinLightLux', 'MaxLightLux')
+          AND (system_type_id <> 106 OR precision <> 9 OR scale <> 2)
+    )
+        THROW 52800, N'MinLightLux/MaxLightLux phải có kiểu DECIMAL(9,2); dừng để kiểm tra tương thích, không tự đổi kiểu cột.', 1;
+
+    -- Cột mới chỉ được tham chiếu trong batch động: cùng batch sẽ được biên
+    -- dịch trước khi ALTER TABLE ở trên chạy, nên tham chiếu trực tiếp báo lỗi 207.
+    DECLARE @InvalidLightRows INT = 0;
+    EXEC sys.sp_executesql N'
+        SELECT @Count = COUNT(*) FROM dbo.EnvironmentThresholds
+        WHERE (MinLightLux IS NULL AND MaxLightLux IS NOT NULL)
+           OR (MinLightLux IS NOT NULL AND MaxLightLux IS NULL)
+           OR MinLightLux NOT BETWEEN 0 AND 200000
+           OR MaxLightLux NOT BETWEEN 0 AND 200000
+           OR MinLightLux > MaxLightLux;',
+        N'@Count INT OUTPUT', @Count = @InvalidLightRows OUTPUT;
+    IF @InvalidLightRows > 0
+        THROW 52801, N'Dữ liệu ngưỡng sáng hiện có không hợp lệ (cần cả hai cột, 0..200000, Min <= Max); sửa tay trước khi migration.', 1;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM sys.check_constraints
+        WHERE parent_object_id = OBJECT_ID('dbo.EnvironmentThresholds')
+          AND name = 'Ck_Thresholds_Light'
+    )
+    BEGIN TRY
+        EXEC sys.sp_executesql N'
+            ALTER TABLE dbo.EnvironmentThresholds WITH CHECK
+            ADD CONSTRAINT Ck_Thresholds_Light CHECK (
+                (MinLightLux IS NULL AND MaxLightLux IS NULL)
+                OR (MinLightLux IS NOT NULL AND MaxLightLux IS NOT NULL
+                    AND MinLightLux BETWEEN 0 AND 200000
+                    AND MaxLightLux BETWEEN 0 AND 200000
+                    AND MinLightLux <= MaxLightLux)
+            );';
+    END TRY
+    BEGIN CATCH
+        THROW 52802, N'Không thể tạo CHECK Ck_Thresholds_Light; dữ liệu ngưỡng sáng hiện có chưa thỏa điều kiện.', 1;
+    END CATCH;
+
     COMMIT TRANSACTION;
 END TRY
 BEGIN CATCH

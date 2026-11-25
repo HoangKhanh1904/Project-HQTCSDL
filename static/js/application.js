@@ -415,17 +415,22 @@
     const form = $("thresholdForm");
     form.replaceChildren();
     $("thresholdEditor").hidden = false;
-    for (const [k, label, min, max] of [
-      ["MinTemperature", "Nhiệt độ tối thiểu", -40, 100],
-      ["MaxTemperature", "Nhiệt độ tối đa", -40, 100],
-      ["MinHumidity", "Độ ẩm tối thiểu", 0, 100],
-      ["MaxHumidity", "Độ ẩm tối đa", 0, 100],
+    for (const [k, label, min, max, required] of [
+      ["MinTemperature", "Nhiệt độ tối thiểu", -40, 100, true],
+      ["MaxTemperature", "Nhiệt độ tối đa", -40, 100, true],
+      ["MinHumidity", "Độ ẩm tối thiểu", 0, 100, true],
+      ["MaxHumidity", "Độ ẩm tối đa", 0, 100, true],
+      // Ngưỡng ánh sáng (lux) cho quy tắc LIGHT AUTO: bỏ trống cả hai ô
+      // nghĩa là khu vực chưa cấu hình ngưỡng sáng.
+      ["MinLightLux", "Ánh sáng tối thiểu (lux)", 0, 200000, false],
+      ["MaxLightLux", "Ánh sáng tối đa (lux)", 0, 200000, false],
     ]) {
       const i = field(form, k, label, {
         type: "number",
         min,
         maxValue: max,
         step: "0.01",
+        required,
       });
       i.value = row?.[k] ?? "";
       i.disabled = user.Role !== "ADMIN";
@@ -438,8 +443,12 @@
         e.preventDefault();
         save.disabled = true;
         try {
+          // Ô trống phải gửi null (bỏ hẳn khỏi payload) chứ không phải
+          // Number("") = 0, để "chưa cấu hình" không thành ngưỡng 0 lux.
           const data = Object.fromEntries(
-            [...new FormData(form)].map(([k, v]) => [k, Number(v)]),
+            [...new FormData(form)]
+              .filter(([, v]) => v !== "")
+              .map(([k, v]) => [k, Number(v)]),
           );
           if (rowVersion) data.row_version = rowVersion;
           await api("/thresholds/" + zoneId, rowVersion ? "PUT" : "POST", data);

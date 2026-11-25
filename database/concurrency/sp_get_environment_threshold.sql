@@ -17,6 +17,7 @@ BEGIN
     DECLARE @ThresholdsId INT;
     DECLARE @MinTemperature DECIMAL(5,2), @MaxTemperature DECIMAL(5,2);
     DECLARE @MinHumidity DECIMAL(5,2), @MaxHumidity DECIMAL(5,2);
+    DECLARE @MinLightLux DECIMAL(9,2), @MaxLightLux DECIMAL(9,2);
     DECLARE @UpdatedAt DATETIME2;
     DECLARE @RowVer BINARY(8);
 
@@ -32,6 +33,7 @@ BEGIN
         SELECT @FoundZoneId = z.ZoneId, @ThresholdsId = t.ThresholdsId,
                @MinTemperature = t.MinTemperature, @MaxTemperature = t.MaxTemperature,
                @MinHumidity = t.MinHumidity, @MaxHumidity = t.MaxHumidity,
+               @MinLightLux = t.MinLightLux, @MaxLightLux = t.MaxLightLux,
                @UpdatedAt = t.UpdateAt, @RowVer = t.RowVer
         FROM dbo.Zones AS z
         LEFT JOIN dbo.EnvironmentThresholds AS t ON t.ZoneId = z.ZoneId
@@ -69,6 +71,7 @@ BEGIN
            @ErrorNumber AS ErrorNumber, @ZoneId AS ZoneId, @ThresholdsId AS ThresholdsId,
            @MinTemperature AS MinTemperature, @MaxTemperature AS MaxTemperature,
            @MinHumidity AS MinHumidity, @MaxHumidity AS MaxHumidity,
+           @MinLightLux AS MinLightLux, @MaxLightLux AS MaxLightLux,
            @UpdatedAt AS UpdatedAt, @RowVer AS RowVer;
 END;
 GO

@@ -388,18 +388,34 @@ def threshold(zone_id):
 def save_threshold(zone_id):
     data = json_body()
     params = {"ZoneId": zone_id, "UserId": g.user["UserID"]}
-    for key, lower, upper in [
-        ("MinTemperature", -40, 100),
-        ("MaxTemperature", -40, 100),
-        ("MinHumidity", 0, 100),
-        ("MaxHumidity", 0, 100),
+    for key, lower, upper, required in [
+        ("MinTemperature", -40, 100, True),
+        ("MaxTemperature", -40, 100, True),
+        ("MinHumidity", 0, 100, True),
+        ("MaxHumidity", 0, 100, True),
+        # Ngưỡng ánh sáng là tùy chọn: bỏ trống cả hai = chưa cấu hình.
+        ("MinLightLux", 0, 200000, False),
+        ("MaxLightLux", 0, 200000, False),
     ]:
-        params[key] = number(data, key, lower, upper, required=True)
+        params[key] = number(data, key, lower, upper, required=required)
     if (
         params["MinTemperature"] > params["MaxTemperature"]
         or params["MinHumidity"] > params["MaxHumidity"]
     ):
         raise ApiError(400, "INVALID_INPUT", "Min phải nhỏ hơn hoặc bằng Max.")
+    if (params["MinLightLux"] is None) != (params["MaxLightLux"] is None):
+        raise ApiError(
+            400,
+            "INVALID_INPUT",
+            "Cần gửi cả MinLightLux và MaxLightLux, hoặc bỏ trống cả hai.",
+        )
+    if (
+        params["MinLightLux"] is not None
+        and params["MinLightLux"] > params["MaxLightLux"]
+    ):
+        raise ApiError(
+            400, "INVALID_INPUT", "MinLightLux phải nhỏ hơn hoặc bằng MaxLightLux."
+        )
     if request.method == "PUT":
         try:
             value = bytes.fromhex(data.get("row_version", ""))

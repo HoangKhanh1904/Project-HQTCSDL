@@ -9,6 +9,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_UpdateEnvironmentThreshold
     @MaxHumidity DECIMAL(5,2),
     @ExpectedRowVer VARBINARY(MAX),
     @UserId INT,
+    @MinLightLux DECIMAL(9,2) = NULL,
+    @MaxLightLux DECIMAL(9,2) = NULL,
     @ResultCode VARCHAR(32) = NULL OUTPUT
 AS
 BEGIN
@@ -25,6 +27,7 @@ BEGIN
         ThresholdsId INT, ZoneId INT,
         MinTemperature DECIMAL(5,2), MaxTemperature DECIMAL(5,2),
         MinHumidity DECIMAL(5,2), MaxHumidity DECIMAL(5,2),
+        MinLightLux DECIMAL(9,2), MaxLightLux DECIMAL(9,2),
         UpdatedAt DATETIME2, RowVer BINARY(8)
     );
 
@@ -46,6 +49,13 @@ BEGIN
            OR @MinHumidity NOT BETWEEN 0 AND 100
            OR @MaxHumidity NOT BETWEEN 0 AND 100
            OR @MinTemperature > @MaxTemperature OR @MinHumidity > @MaxHumidity
+           -- Ngưỡng sáng: NULL/NULL nghĩa là giữ nguyên giá trị đang lưu;
+           -- không chấp nhận truyền lẻ một trong hai cột.
+           OR (@MinLightLux IS NULL AND @MaxLightLux IS NOT NULL)
+           OR (@MinLightLux IS NOT NULL AND @MaxLightLux IS NULL)
+           OR @MinLightLux NOT BETWEEN 0 AND 200000
+           OR @MaxLightLux NOT BETWEEN 0 AND 200000
+           OR @MinLightLux > @MaxLightLux
            OR @ExpectedRowVer IS NULL OR DATALENGTH(@ExpectedRowVer) <> 8
             BEGIN
                 SET @Code = 'VALIDATION_ERROR';
@@ -74,10 +84,13 @@ BEGIN
         UPDATE dbo.EnvironmentThresholds WITH (UPDLOCK, HOLDLOCK)
         SET MinTemperature = @MinTemperature, MaxTemperature = @MaxTemperature,
             MinHumidity = @MinHumidity, MaxHumidity = @MaxHumidity,
+            MinLightLux = COALESCE(@MinLightLux, MinLightLux),
+            MaxLightLux = COALESCE(@MaxLightLux, MaxLightLux),
             UpdateAt = SYSDATETIME()
         OUTPUT inserted.ThresholdsId, inserted.ZoneId,
                inserted.MinTemperature, inserted.MaxTemperature,
-               inserted.MinHumidity, inserted.MaxHumidity, inserted.UpdateAt, inserted.RowVer
+               inserted.MinHumidity, inserted.MaxHumidity,
+               inserted.MinLightLux, inserted.MaxLightLux, inserted.UpdateAt, inserted.RowVer
         INTO @Changed
         WHERE ZoneId = @ZoneId AND RowVer = CONVERT(BINARY(8), @ExpectedRowVer);
 
@@ -130,7 +143,7 @@ BEGIN
     SELECT @Success AS Success, @Code AS Code, @Message AS Message,
            @ErrorNumber AS ErrorNumber, @ZoneId AS ZoneId, c.ThresholdsId,
            c.MinTemperature, c.MaxTemperature, c.MinHumidity, c.MaxHumidity,
-           c.UpdatedAt, c.RowVer
+           c.MinLightLux, c.MaxLightLux, c.UpdatedAt, c.RowVer
     FROM (VALUES (1)) AS result(OneRow)
     LEFT JOIN @Changed AS c ON @Success = 1;
 END;

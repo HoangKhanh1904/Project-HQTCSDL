@@ -354,12 +354,106 @@ def test_25(c):
             'QA25 included event at exclusive End')
 
 
+def test_26(c):
+    # P1: LIGHT AUTO theo nguong anh sang (MinLightLux/MaxLightLux).
+    # Fixture rieng + rollback nhu moi test khac.
+    columns=['MinLightLux','MaxLightLux']
+    missing=[col for col in columns
+             if scalar(c,"SELECT COL_LENGTH('dbo.EnvironmentThresholds',?)",col) is None]
+    require(not missing,'QA26: thieu cot '+','.join(missing)+
+            ' trong dbo.EnvironmentThresholds - hay chay database/alter_table.sql '
+            '(migration P1) truoc khi test')
+    f=fixture(c)
+    c.execute("UPDATE dbo.Zones SET Status='ACTIVE' WHERE ZoneId=?",f['zone'])
+    c.execute("UPDATE dbo.Devices SET Status='ACTIVE' WHERE DeviceId=?",f['device'])
+    light=insert_id(c,"INSERT dbo.Devices(ZoneId,DeviceName,DeviceType) OUTPUT inserted.DeviceId VALUES (?,N'QA26 light','LIGHT')",f['zone'])
+    c.execute("UPDATE dbo.Devices SET Status='ACTIVE' WHERE DeviceId=?",light)
+
+    # 1. Nguong sang luu/doc lai dung qua 2 procedure nguong.
+    token=scalar(c,'SELECT RowVer FROM dbo.EnvironmentThresholds WHERE ZoneId=?',f['zone'])
+    updated=one(c,"""EXEC dbo.sp_UpdateEnvironmentThreshold
+        @ZoneId=?,@MinTemperature=25,@MaxTemperature=33,@MinHumidity=65,@MaxHumidity=95,
+        @ExpectedRowVer=?,@UserId=?,@MinLightLux=100,@MaxLightLux=500""",
+        f['zone'],token,f['user'])
+    require(updated['Success']==1 and updated['Code']=='OK',
+            'QA26 cap nhat nguong sang that bai: '+str(updated))
+    stored=one(c,'SELECT MinLightLux,MaxLightLux FROM dbo.EnvironmentThresholds WHERE ZoneId=?',f['zone'])
+    require((float(stored['MinLightLux']),float(stored['MaxLightLux']))==(100.0,500.0),
+            'QA26 nguong sang khong duoc luu: '+str(stored))
+    got=one(c,'EXEC dbo.sp_GetEnvironmentThreshold @ZoneId=?',f['zone'])
+    require(got['Code']=='OK' and (float(got['MinLightLux']),float(got['MaxLightLux']))==(100.0,500.0),
+            'QA26 getter khong tra nguong sang: '+str(got))
+
+    c.execute("INSERT dbo.DeviceControlSettings(DeviceId,DeviceType,ControlMode,IsOn) VALUES (?,N'LIGHT',N'AUTO',0)",light)
+
+    def auto(lux):
+        rid=reading(c,f,28,80,str(uuid.uuid4()),None,lux)['ReadingId']
+        return one(c,"""EXEC dbo.sp_SimulateDeviceControl
+            @DeviceId=?,@UserId=?,@Action='AUTO',@ReadingId=?""",light,f['user'],rid)
+
+    def logs():
+        return scalar(c,'SELECT COUNT(*) FROM dbo.ControlLogs WHERE DeviceId=?',light)
+
+    # 2. Toi (lux < Min): bat den va ghi dung 1 log TURN_ON.
+    dark=auto(50)
+    require(dark['Success']==1 and dark['Code']=='OK' and dark['IsOn']==1
+            and dark['StateChanged']==1 and dark['Changed']==1,
+            'QA26 lux=50 phai bat den: '+str(dark))
+    require(logs()==1 and scalar(c,"SELECT COUNT(*) FROM dbo.ControlLogs WHERE DeviceId=? AND Command='TURN_ON'",light)==1,
+            'QA26 TURN_ON phai duoc ghi dung 1 lan')
+
+    # 3. Trong khoang (Min < lux < Max): giu ON, khong ghi them log.
+    middle=auto(300)
+    require(middle['Code']=='OK' and middle['IsOn']==1
+            and middle['StateChanged']==0 and middle['Changed']==0,
+            'QA26 lux=300 phai giu ON (hysteresis): '+str(middle))
+    require(logs()==1,'QA26 hysteresis khong duoc ghi them log')
+
+    # 4. Sang (lux > Max): tat den va ghi dung 1 log TURN_OFF.
+    bright=auto(800)
+    require(bright['Code']=='OK' and bright['IsOn']==0
+            and bright['StateChanged']==1 and bright['Changed']==1,
+            'QA26 lux=800 phai tat den: '+str(bright))
+    require(logs()==2 and scalar(c,"SELECT COUNT(*) FROM dbo.ControlLogs WHERE DeviceId=? AND Command='TURN_OFF'",light)==1,
+            'QA26 TURN_OFF phai duoc ghi dung 1 lan')
+
+    # 5. Bang nguong thi giu nguyen trang thai.
+    require(auto(50)['IsOn']==1,'QA26 chuan bi ON truoc khi test bien')
+    at_max=auto(500)
+    require(at_max['IsOn']==1 and at_max['StateChanged']==0,
+            'QA26 lux=Max khi dang ON phai giu ON: '+str(at_max))
+    require(auto(800)['IsOn']==0,'QA26 chuan bi OFF truoc khi test bien')
+    at_min=auto(100)
+    require(at_min['IsOn']==0 and at_min['StateChanged']==0,
+            'QA26 lux=Min khi dang OFF phai giu OFF: '+str(at_min))
+    require(logs()==4,'QA26 chi 4 lan doi trang thai duoc ghi log')
+    after_thresholds=logs()
+
+    # 6. Moi lan AUTO phai dung reading moi nhat (chong STALE_READING).
+    old=reading(c,f,28,80,str(uuid.uuid4()),None,800)['ReadingId']
+    fresh=reading(c,f,28,80,str(uuid.uuid4()),None,50)['ReadingId']
+    stale=one(c,"""EXEC dbo.sp_SimulateDeviceControl
+        @DeviceId=?,@UserId=?,@Action='AUTO',@ReadingId=?""",light,f['user'],old)
+    require(stale['Code']=='STALE_READING',
+            'QA26 reading cu phai bi tu choi STALE_READING: '+str(stale))
+    applied=one(c,"""EXEC dbo.sp_SimulateDeviceControl
+        @DeviceId=?,@UserId=?,@Action='AUTO',@ReadingId=?""",light,f['user'],fresh)
+    require(applied['Code']=='OK' and applied['IsOn']==1,
+            'QA26 phai dung reading moi nhat: '+str(applied))
+    require(logs()==after_thresholds+1,'QA26 reading moi nhat phai ghi dung 1 log')
+
+    # Thieu so do anh sang (NULL) la READING_UNAVAILABLE, khong phai 0 lux.
+    no_lux=auto(None)
+    require(no_lux['Code']=='READING_UNAVAILABLE' and no_lux['Success']==0,
+            'QA26 NULL lux phai la READING_UNAVAILABLE: '+str(no_lux))
+
+
 AUTOMATED={
     1:test_01,2:test_02,3:test_03,4:test_04,5:test_05,6:test_06,
     7:test_07,8:test_08,9:test_09,10:test_10,11:test_11,12:test_12,
     13:test_13,14:test_14,15:test_15,16:test_16,17:test_17,18:test_18,
     19:test_19,
-    23:test_23,25:test_25,
+    23:test_23,25:test_25,26:test_26,
 }
 MANUAL={
     20:'Use separate STAFF/ADMIN/Ingest logins; never simulate permissions with an admin connection',
@@ -370,7 +464,7 @@ MANUAL={
 
 
 def main():
-    p=argparse.ArgumentParser(description='TV4 SQL QA (21 automated + 4 NOT TESTED/manual)')
+    p=argparse.ArgumentParser(description='TV4 SQL QA (22 automated + 4 NOT TESTED/manual)')
     p.add_argument('--strict',action='store_true',help='non-zero if any NOT TESTED')
     args=p.parse_args()
     connection_string=os.getenv('QA_CONN_STR')
@@ -392,7 +486,7 @@ def main():
     except Exception as e:
         print('PREFLIGHT FAIL:',type(e).__name__,e,file=sys.stderr)
         return 2
-    for number in range(1,26):
+    for number in range(1,27):
         name=f'QA{number:02d}'
         if number in MANUAL:
             summary['NOT TESTED']+=1

@@ -5,6 +5,8 @@ như một client thật (không đụng trực tiếp vào SQL Server).
 Ví dụ:
   export SIMULATOR_TOKEN=...            # cùng giá trị với .env của server (không truyền qua CLI)
   python simulator/run.py --scenario normal --device 1 --interval 3 --duration 60
+  python simulator/run.py --scenario low_light --device 1 --interval 3 --duration 60
+  python simulator/run.py --scenario light_auto --device 1 --interval 3 --duration 60
   python simulator/run.py --scenario birds --house 1 --duration 120
 Dừng sớm bằng Ctrl+C. Luôn có giới hạn thời gian (mặc định 60s, tối đa 3600s).
 Thoát mã 1 nếu có phản hồi không như mong đợi (dùng được làm test tích hợp).
@@ -31,12 +33,31 @@ MAX_DURATION = 3600
 # Khoảng giá trị mẫu: chỉnh cho khớp ngưỡng seed của TV1.
 NORMAL_TEMP, NORMAL_HUM = (28.0, 30.0), (80.0, 90.0)
 HIGH_TEMP, LOW_HUM = (34.0, 37.0), (50.0, 62.0)
+LOW_LIGHT = (0.0, 10.0)
+# Chu kỳ 12 bước cố định cho light_auto: quét toàn dải hợp lệ 0..200000 lux
+# nên luôn cắt qua cả MinLightLux và MaxLightLux của zone, rồi giảm ngược lại.
+LIGHT_AUTO_STEPS = (
+    0.0,
+    0.0,
+    20000.0,
+    50000.0,
+    100000.0,
+    150000.0,
+    200000.0,
+    200000.0,
+    150000.0,
+    100000.0,
+    50000.0,
+    20000.0,
+)
 
 READING_SCENARIOS = {
     "normal",
     "high_temperature",
     "low_humidity",
     "co2_light",
+    "low_light",
+    "light_auto",
     "repeat_event",
     "invalid_input",
 }
@@ -121,6 +142,23 @@ class Runner:
                     temp, hum, co2_ppm=round(max(co2, 0), 1), light_lux=round(lux, 1)
                 ),
                 {200, 201},
+            )
+        elif s == "low_light":
+            lux = round(random.uniform(*LOW_LIGHT), 1)
+            self.send(
+                path,
+                self.reading(temp, hum, light_lux=lux),
+                {200, 201},
+                f"lux={lux:g} ",
+            )
+        elif s == "light_auto":
+            step = t % len(LIGHT_AUTO_STEPS)
+            lux = LIGHT_AUTO_STEPS[step]
+            self.send(
+                path,
+                self.reading(temp, hum, light_lux=lux),
+                {200, 201},
+                f"lux={lux:g} bước {step + 1}/{len(LIGHT_AUTO_STEPS)} ",
             )
         elif s == "repeat_event":
             p = self.reading(temp, hum)

@@ -13,8 +13,9 @@ BEGIN
         @OldMode VARCHAR(6),@OldOn BIT,@NewMode VARCHAR(6),@NewOn BIT,@Changed BIT=0,@ControlLogId BIGINT,
         @ModeChanged BIT=0,@StateChanged BIT=0;
     DECLARE @SensorId INT,@SensorZone INT,@SensorType VARCHAR(30),@SensorStatus VARCHAR(20),
-        @Temp DECIMAL(5,2),@Humidity DECIMAL(5,2),@ReadingTime DATETIME2,
-        @MinT DECIMAL(5,2),@MaxT DECIMAL(5,2),@MinH DECIMAL(5,2),@MaxH DECIMAL(5,2);
+        @Temp DECIMAL(5,2),@Humidity DECIMAL(5,2),@LightLux DECIMAL(9,2),@ReadingTime DATETIME2,
+        @MinT DECIMAL(5,2),@MaxT DECIMAL(5,2),@MinH DECIMAL(5,2),@MaxH DECIMAL(5,2),
+        @MinLightLux DECIMAL(9,2),@MaxLightLux DECIMAL(9,2);
     BEGIN TRY
         IF @Entry=0 BEGIN TRANSACTION;
         ELSE BEGIN SAVE TRANSACTION SimControlSave; SET @Saved=1; END;
@@ -37,7 +38,7 @@ BEGIN
             -- lock their device row, so MANUAL and AUTO cannot interleave writes.
             SELECT @SensorZone=ZoneId,@SensorType=DeviceType,@SensorStatus=Status
             FROM dbo.Devices WITH(UPDLOCK,HOLDLOCK) WHERE DeviceId=@SensorId;
-            SELECT @Temp=Temperature,@Humidity=Humidity,@ReadingTime=RecordeAt
+            SELECT @Temp=Temperature,@Humidity=Humidity,@LightLux=LightLux,@ReadingTime=RecordeAt
             FROM dbo.SensorReadings WITH(HOLDLOCK) WHERE ReadingId=@ReadingId AND DeviceId=@SensorId;
             IF @Temp IS NULL OR @SensorType<>'SENSOR' OR @SensorStatus<>'ACTIVE'
             BEGIN SET @Code='READING_UNAVAILABLE'; GOTO BusinessFailure; END;
@@ -61,16 +62,28 @@ BEGIN
         BEGIN
             IF @NewMode='MANUAL' BEGIN SET @Code='MANUAL_OVERRIDE'; GOTO BusinessFailure; END;
             IF @SensorZone<>@ZoneId BEGIN SET @Code='READING_ZONE_MISMATCH'; GOTO BusinessFailure; END;
-            IF @Type='LIGHT' BEGIN SET @Code='RULE_UNAVAILABLE'; GOTO BusinessFailure; END;
-            SELECT @MinT=MinTemperature,@MaxT=MaxTemperature,@MinH=MinHumidity,@MaxH=MaxHumidity
+            SELECT @MinT=MinTemperature,@MaxT=MaxTemperature,@MinH=MinHumidity,@MaxH=MaxHumidity,
+                   @MinLightLux=MinLightLux,@MaxLightLux=MaxLightLux
             FROM dbo.EnvironmentThresholds WITH(HOLDLOCK) WHERE ZoneId=@ZoneId;
             IF @MinT IS NULL BEGIN SET @Code='THRESHOLD_NOT_FOUND'; GOTO BusinessFailure; END;
+            -- LIGHT needs an actual lux sample: NULL means missing data, not 0 lux.
+            IF @Type='LIGHT' AND @LightLux IS NULL
+            BEGIN SET @Code='READING_UNAVAILABLE'; GOTO BusinessFailure; END;
+            -- A zone that never configured light thresholds keeps LIGHT AUTO
+            -- rejected instead of inventing a lux range.
+            IF @Type='LIGHT' AND (@MinLightLux IS NULL OR @MaxLightLux IS NULL)
+            BEGIN SET @Code='THRESHOLD_NOT_FOUND'; GOTO BusinessFailure; END;
             -- Hysteresis uses configured min/max, with equality retaining state
             -- when min=max. No biological thresholds, PID or hardware feedback.
             IF @Type='FAN'
                 SET @NewOn=CASE WHEN @Temp>@MaxT THEN 1 WHEN @Temp<@MinT THEN 0 ELSE @NewOn END;
             IF @Type='HUMIDIFIER'
                 SET @NewOn=CASE WHEN @Humidity<@MinH THEN 1 WHEN @Humidity>@MaxH THEN 0 ELSE @NewOn END;
+            -- Darker than MinLightLux turns the lamp on; brighter than
+            -- MaxLightLux turns it off; inside the band (and exactly on a
+            -- threshold) the previous state is retained.
+            IF @Type='LIGHT'
+                SET @NewOn=CASE WHEN @LightLux<@MinLightLux THEN 1 WHEN @LightLux>@MaxLightLux THEN 0 ELSE @NewOn END;
         END;
         SET @ModeChanged=CASE WHEN @OldMode IS NULL OR @NewMode<>@OldMode THEN 1 ELSE 0 END;
         -- A missing setting represents the default OFF state, not an OFF command.
