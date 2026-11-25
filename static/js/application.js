@@ -725,7 +725,24 @@
     const socket = io({ transports: ["websocket", "polling"] });
     socket.on("dashboard_update", () => {
       if (!document.hidden) load();
+      refreshBell();
     });
+    socket.on("new_alert", (a) => {
+      refreshBell();
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(`Cảnh báo ${a.alert_type} — ${a.zone_name}`, {
+          body: a.message,
+        });
+      }
+    });
+  }
+  async function refreshBell() {
+    try {
+      const s = await api("/alerts/summary");
+      $("alertBellCount").textContent = s.pending ?? 0;
+    } catch (err) {
+      // Bell giu gia tri cu neu khong lay duoc so lieu.
+    }
   }
   async function start() {
     try {
@@ -760,6 +777,10 @@
       editor();
       filterSetup();
       await load();
+      refreshBell();
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+      }
       if (["dashboard", "alerts", "events", "controls"].includes(page)) {
         setInterval(() => {
           if (!document.hidden) load();

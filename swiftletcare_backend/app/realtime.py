@@ -71,10 +71,48 @@ def emit_dashboard_once(app, last_key):
     return key
 
 
+def emit_new_alerts_once(app, last_alert_ids):
+    """P3: mot chu ky kiem tra alert moi: emit 'new_alert' cho moi alert
+    PENDING chua tung emit. Tra ve tap AlertId PENDING hien tai."""
+    if not _clients:
+        return last_alert_ids
+    try:
+        with app.app_context():
+            rows = db.query(
+                "SELECT TOP (20) a.AlertId, a.AlertType, a.Message, a.CreatedAt, "
+                "z.ZoneName, h.HouseName FROM dbo.Alerts a "
+                "JOIN dbo.Zones z ON z.ZoneId = a.ZoneId "
+                "JOIN dbo.SwiftletHouses h ON h.HouseId = z.HouseId "
+                "WHERE a.Status = 'PENDING' ORDER BY a.CreatedAt DESC, a.AlertId DESC",
+            )
+    except Exception:
+        logger.exception("Realtime emitter: cannot load new alerts")
+        return last_alert_ids
+    current_ids = {r["AlertId"] for r in rows}
+    if last_alert_ids is None:
+        return current_ids
+    for r in rows:
+        if r["AlertId"] not in last_alert_ids:
+            socketio.emit(
+                "new_alert",
+                {
+                    "alert_id": r["AlertId"],
+                    "alert_type": r["AlertType"],
+                    "message": r["Message"],
+                    "zone_name": r["ZoneName"],
+                    "house_name": r["HouseName"],
+                    "created_at": r["CreatedAt"],
+                },
+            )
+    return current_ids
+
+
 def _emitter_loop(app):
     last_key = None
+    last_alert_ids = None
     while True:
         last_key = emit_dashboard_once(app, last_key)
+        last_alert_ids = emit_new_alerts_once(app, last_alert_ids)
         socketio.sleep(EMIT_INTERVAL_SECONDS)
 
 

@@ -31,6 +31,13 @@ def create_app(test_config=None):
         MAX_CONTENT_LENGTH=64 * 1024,  # body tối đa 64 KB
         DB_TIMEZONE=os.getenv("MSSQL_TIMEZONE", "UTC"),
         PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+        # P3: cau hinh thong bao (Gmail SMTP). Xem swiftletcare_backend/env.example.backend.
+        SMTP_HOST=os.getenv("SMTP_HOST", "smtp.gmail.com"),
+        SMTP_PORT=os.getenv("SMTP_PORT", "587"),
+        SMTP_USER=os.getenv("SMTP_USER", ""),
+        SMTP_PASSWORD=os.getenv("SMTP_PASSWORD", ""),
+        SMTP_FROM=os.getenv("SMTP_FROM", ""),
+        NOTIFY_EMAILS=os.getenv("NOTIFY_EMAILS", ""),
     )
     if test_config:
         app.config.update(test_config)

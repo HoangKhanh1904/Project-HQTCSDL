@@ -1,6 +1,6 @@
-from flask import Blueprint
+from flask import Blueprint, current_app
 
-from .. import repository
+from .. import notifications, repository
 from ..auth import simulator_required
 from ..responses import ApiError, fail, ok
 from ..validation import json_body, number, req_guid, req_int
@@ -53,6 +53,14 @@ def post_reading():
         )
 
     duplicate = bool(row.get("Duplicate"))
+    # P3: co alert moi thi gui thong bao (thread nen, khong chan response).
+    if not duplicate and (row.get("AlertCount") or 0) > 0:
+        try:
+            notifications.notify_new_alerts(
+                current_app._get_current_object(), row.get("ReadingId"), reading
+            )
+        except Exception:
+            current_app.logger.exception("Notifications: dispatch failed")
     data_out = {k: row.get(k) for k in ("ReadingId", "AlertCount", "ThresholdStatus")}
     data_out["Duplicate"] = duplicate
     return ok(

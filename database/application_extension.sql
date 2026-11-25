@@ -94,6 +94,26 @@ BEGIN TRY
         CREATE UNIQUE INDEX UX_SystemEvents_Source_Event ON dbo.SimulatedSystemEvents(HouseId,SourceType,SourceEventId) WHERE SourceEventId IS NOT NULL;
     IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.SimulatedSystemEvents') AND name='IX_SystemEvents_House_Time')
         CREATE INDEX IX_SystemEvents_House_Time ON dbo.SimulatedSystemEvents(HouseId,EventAt DESC,EventId DESC) INCLUDE(ZoneId,Status);
+    -- P3: log gui thong bao (trong app + email). AlertActions chi cho phep
+    -- ACKNOWLEDGE/RESOLVE/REOPEN (CHECK) nen log gui phai dung bang rieng.
+    IF OBJECT_ID('dbo.NotificationLogs', 'U') IS NULL
+        CREATE TABLE dbo.NotificationLogs (
+            NotificationLogId BIGINT IDENTITY(1,1) PRIMARY KEY,
+            AlertId BIGINT NOT NULL,
+            Channel VARCHAR(20) NOT NULL,
+            Recipient NVARCHAR(255) NULL,
+            Status VARCHAR(20) NOT NULL,
+            ErrorMessage NVARCHAR(1000) NULL,
+            CreateAt DATETIME2 NOT NULL DEFAULT DATEADD(HOUR,7,SYSUTCDATETIME()),
+            CONSTRAINT FK_NotificationLogs_Alerts
+                FOREIGN KEY (AlertId) REFERENCES dbo.Alerts(AlertId),
+            CONSTRAINT Ck_NotificationLogs_Channel
+                CHECK (Channel IN ('IN_APP', 'EMAIL')),
+            CONSTRAINT Ck_NotificationLogs_Status
+                CHECK (Status IN ('SENT', 'DELIVERED', 'FAILED', 'SKIPPED'))
+        );
+    IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE object_id=OBJECT_ID('dbo.NotificationLogs') AND name='IX_NotificationLogs_Alert_Time')
+        CREATE INDEX IX_NotificationLogs_Alert_Time ON dbo.NotificationLogs(AlertId, CreateAt DESC);
     COMMIT;
 END TRY
 BEGIN CATCH

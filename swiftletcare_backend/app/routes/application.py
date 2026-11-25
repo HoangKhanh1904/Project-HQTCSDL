@@ -355,6 +355,23 @@ def alerts():
     )
 
 
+@bp.get("/api/alerts/summary")
+@login_required
+def alerts_summary():
+    """P3: so luong alert theo trang thai (cho chuong thong bao trong app)."""
+    rows = db.query(
+        "SELECT Status, COUNT(*) AS Cnt FROM dbo.Alerts GROUP BY Status"
+    )
+    counts = {r["Status"]: r["Cnt"] for r in rows}
+    return ok(
+        {
+            "pending": counts.get("PENDING", 0),
+            "acknowledged": counts.get("ACKNOWLEDGED", 0),
+            "resolved": counts.get("RESOLVED", 0),
+        }
+    )
+
+
 @bp.post("/api/alerts/<int:alert_id>/<action>")
 @role_required("ADMIN", "STAFF")
 def alert_action(alert_id, action):
