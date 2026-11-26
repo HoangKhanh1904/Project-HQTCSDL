@@ -1,10 +1,10 @@
 USE SwiftletCare;
 GO
-CREATE OR ALTER PROCEDURE dbo.sp_GetZoneDashboard @ZoneId INT=NULL
+CREATE OR ALTER PROCEDURE dbo.sp_GetZoneDashboard @ZoneId INT=NULL, @HouseId INT=NULL, @ManagerId INT=NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF @ZoneId IS NOT NULL AND @ZoneId<=0 THROW 52504,'Invalid ZoneId',1;
+    IF (@ZoneId IS NOT NULL AND @ZoneId<=0) OR (@HouseId IS NOT NULL AND @HouseId<=0) OR (@ManagerId IS NOT NULL AND @ManagerId<=0) THROW 52504,'Invalid dashboard filter',1;
 -- DASHBOARD
 WITH LatestReadings AS (
     SELECT d.ZoneId, d.DeviceId, r.ReadingId,
@@ -18,7 +18,7 @@ WITH LatestReadings AS (
     ) AS r
     WHERE d.DeviceType = 'SENSOR'
 )
-SELECT z.ZoneId, z.ZoneName, h.HouseName,
+SELECT z.ZoneId, z.ZoneName, h.HouseId, h.HouseName,
        COUNT(r.DeviceId) AS SensorCount,
        AVG(r.Temperature) AS AvgTemperature,
        AVG(r.Humidity) AS AvgHumidity,
@@ -40,8 +40,8 @@ FROM dbo.Zones AS z
 JOIN dbo.SwiftletHouses AS h ON h.HouseId = z.HouseId
 LEFT JOIN LatestReadings AS r ON r.ZoneId = z.ZoneId
 LEFT JOIN dbo.EnvironmentThresholds AS t ON t.ZoneId = z.ZoneId
-WHERE @ZoneId IS NULL OR z.ZoneId=@ZoneId
-GROUP BY z.ZoneId, z.ZoneName, h.HouseName, t.ThresholdsId
+WHERE (@ZoneId IS NULL OR z.ZoneId=@ZoneId) AND (@HouseId IS NULL OR z.HouseId=@HouseId) AND (@ManagerId IS NULL OR h.ManagerId=@ManagerId)
+GROUP BY z.ZoneId, z.ZoneName, h.HouseId, h.HouseName, t.ThresholdsId
 ORDER BY h.HouseName, z.ZoneName;
 END;
 GO

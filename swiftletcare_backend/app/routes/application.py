@@ -8,7 +8,7 @@ from flask import Blueprint, g, render_template, request, session, current_app
 from werkzeug.security import check_password_hash
 
 from .. import db
-from ..auth import login_required, role_required, simulator_required
+from ..auth import login_required, role_required, simulator_required, managed_house_ids, require_house_access, require_zone_access, require_device_access, require_alert_access, require_event_access
 from ..responses import ApiError, ok
 from ..validation import choice, event_time, json_body, number, req_guid, req_int
 
@@ -214,6 +214,17 @@ ENTITIES = {
 }
 
 
+@bp.get("/api/farms/overview")
+@login_required
+def farms_overview():
+    return ok(
+        rows_proc(
+            "sp_GetHouseOverview",
+            {"ManagerId": None if session.get("role") == "ADMIN" else g.user["UserID"]},
+        )
+    )
+
+
 @bp.get("/api/<entity>")
 @login_required
 def list_entity(entity):
@@ -227,12 +238,30 @@ def list_entity(entity):
         if entity != "farms"
         else None
     )
-    where = (
-        " WHERE " + ("HouseId" if entity == "areas" else "ZoneId") + "=?"
-        if parent
-        else ""
-    )
-    params = [parent] if parent else []
+    if entity == "areas" and parent:
+        require_house_access(parent)
+    if entity == "devices" and parent:
+        require_zone_access(parent)
+    conditions = []
+    params = []
+    if parent:
+        conditions.append(("HouseId" if entity == "areas" else "ZoneId") + "=?")
+        params.append(parent)
+    if session.get("role") == "STAFF":
+        if entity == "farms":
+            conditions.append("ManagerId=?")
+            params.append(g.user["UserID"])
+        elif entity == "areas":
+            conditions.append(
+                "HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?)"
+            )
+            params.append(g.user["UserID"])
+        elif entity == "devices":
+            conditions.append(
+                "ZoneId IN (SELECT ZoneId FROM dbo.Zones WHERE HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?))"
+            )
+            params.append(g.user["UserID"])
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
     records = db.query(
         f"SELECT {cols} FROM dbo.{table}{where} ORDER BY {key} DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
         params + [(page_no - 1) * size, size],
@@ -307,10 +336,21 @@ def save_entity(entity, item_id=None):
 @bp.get("/api/dashboard/zones")
 @login_required
 def dashboard():
-    raw = rows_proc("sp_GetZoneDashboard", {"ZoneId": query_id("zone_id")})
+    house_id = query_id("house_id")
+    if house_id is not None:
+        require_house_access(house_id)
+    raw = rows_proc(
+        "sp_GetZoneDashboard",
+        {
+            "ZoneId": query_id("zone_id"),
+            "HouseId": house_id,
+            "ManagerId": None if session.get("role") == "ADMIN" else g.user["UserID"],
+        },
+    )
     zones = [
         {
             "zone_id": r["ZoneId"],
+            "house_id": r["HouseId"],
             "zone_name": r["ZoneName"],
             "house_name": r["HouseName"],
             "temperature": r["AvgTemperature"],
@@ -329,16 +369,26 @@ def dashboard():
 @login_required
 def metrics():
     start, end = period()
+    house_id = query_id("house_id")
+    zone_id = query_id("zone_id")
+    device_id = query_id("device_id")
+    if house_id is not None:
+        require_house_access(house_id)
+    if zone_id is not None:
+        require_zone_access(zone_id)
+    if device_id is not None:
+        require_device_access(device_id)
     return ok(
         rows_proc(
             "sp_GetEnvironmentMetrics",
             {
-                "HouseId": query_id("house_id"),
-                "ZoneId": query_id("zone_id"),
-                "DeviceId": query_id("device_id"),
+                "HouseId": house_id,
+                "ZoneId": zone_id,
+                "DeviceId": device_id,
                 "From": start,
                 "To": end,
                 "Limit": limit(),
+                "ManagerId": None if session.get("role") == "ADMIN" else g.user["UserID"],
             },
         )
     )
@@ -348,20 +398,29 @@ def metrics():
 @login_required
 def alerts():
     zone = query_id("zone_id")
-    return ok(
-        db.query(
-            "SELECT TOP (?) AlertId,ZoneId,ReadingId,AlertType,Message,Status,CreatedAt,ResolvedAt FROM dbo.Alerts WHERE (? IS NULL OR ZoneId=?) ORDER BY CreatedAt DESC,AlertId DESC",
-            [limit(), zone, zone],
-        )
-    )
+    if zone is not None:
+        require_zone_access(zone)
+    sql = "SELECT TOP (?) AlertId,ZoneId,ReadingId,AlertType,Message,Status,CreatedAt,ResolvedAt FROM dbo.Alerts WHERE (? IS NULL OR ZoneId=?)"
+    params = [limit(), zone, zone]
+    if session.get("role") == "STAFF" and zone is None:
+        sql += " AND ZoneId IN (SELECT ZoneId FROM dbo.Zones WHERE HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?))"
+        params.append(g.user["UserID"])
+    sql += " ORDER BY CreatedAt DESC,AlertId DESC"
+    return ok(db.query(sql, params))
 
 
 @bp.get("/api/alerts/summary")
 @login_required
 def alerts_summary():
     """P3: so luong alert theo trang thai (cho chuong thong bao trong app)."""
+    where = ""
+    params = []
+    if session.get("role") == "STAFF":
+        where = " WHERE ZoneId IN (SELECT ZoneId FROM dbo.Zones WHERE HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?))"
+        params = [g.user["UserID"]]
     rows = db.query(
-        "SELECT Status, COUNT(*) AS Cnt FROM dbo.Alerts GROUP BY Status"
+        f"SELECT Status, COUNT(*) AS Cnt FROM dbo.Alerts{where} GROUP BY Status",
+        params,
     )
     counts = {r["Status"]: r["Cnt"] for r in rows}
     return ok(
@@ -383,12 +442,14 @@ def alert_action(alert_id, action):
     }
     if action not in procs:
         raise ApiError(404, "NOT_FOUND", "Hành động không hợp lệ.")
+    require_alert_access(alert_id)
     return procedure(procs[action], {"AlertId": alert_id, "UserId": g.user["UserID"]})
 
 
 @bp.get("/api/thresholds/<int:zone_id>")
 @login_required
 def threshold(zone_id):
+    require_zone_access(zone_id)
     rows = rows_proc("sp_GetEnvironmentThreshold", {"ZoneId": zone_id})
     if rows and rows[0].get("Code") == "THRESHOLD_NOT_FOUND":
         return ok([])
@@ -492,6 +553,7 @@ def birds():
         raise ApiError(400, "INVALID_INPUT", "house_id là bắt buộc.")
     if not db.query("SELECT HouseId FROM dbo.SwiftletHouses WHERE HouseId=?", [house]):
         raise ApiError(404, "HOUSE_NOT_FOUND", "Nhà yến không tồn tại.")
+    require_house_access(house)
     # This procedure groups local Vietnam dates, independently of sensor server time.
     dates = [
         datetime.fromisoformat(request.args[k].replace("Z", "+00:00"))
@@ -521,18 +583,24 @@ def analytics_correlation():
     """
     start, end = period(required=True)
     house = query_id("house_id")
+    zone = query_id("zone_id")
     if house is not None and not db.query(
         "SELECT HouseId FROM dbo.SwiftletHouses WHERE HouseId=?", [house]
     ):
         raise ApiError(404, "HOUSE_NOT_FOUND", "Nhà yến không tồn tại.")
+    if house is not None:
+        require_house_access(house)
+    if zone is not None:
+        require_zone_access(zone)
     return ok(
         rows_proc(
             "sp_GetEnvironmentYieldCorrelation",
             {
                 "HouseId": house,
-                "ZoneId": query_id("zone_id"),
+                "ZoneId": zone,
                 "From": start,
                 "To": end,
+                "ManagerId": None if session.get("role") == "ADMIN" else g.user["UserID"],
             },
         )
     )
@@ -575,14 +643,21 @@ def events():
     status = request.args.get("status") or None
     if status not in (None, "NEW", "ACKNOWLEDGED", "RESOLVED"):
         raise ApiError(400, "INVALID_INPUT", "status không hợp lệ.")
+    house_id = query_id("house_id")
+    zone_id = query_id("zone_id")
+    if house_id is not None:
+        require_house_access(house_id)
+    if zone_id is not None:
+        require_zone_access(zone_id)
     return ok(
         rows_proc(
             "sp_GetSimulatedSystemEvents",
             {
-                "HouseId": query_id("house_id"),
-                "ZoneId": query_id("zone_id"),
+                "HouseId": house_id,
+                "ZoneId": zone_id,
                 "Status": status,
                 "Limit": limit(),
+                "ManagerId": None if session.get("role") == "ADMIN" else g.user["UserID"],
             },
         )
     )
@@ -592,6 +667,7 @@ def events():
 @role_required("ADMIN", "STAFF")
 def event_status(event_id):
     data = json_body()
+    require_event_access(event_id)
     return procedure(
         "sp_UpdateSimulatedEventStatus",
         {
@@ -606,18 +682,20 @@ def event_status(event_id):
 @bp.get("/api/controls")
 @login_required
 def controls():
-    return ok(
-        db.query(
-            "SELECT d.DeviceId,d.DeviceName,d.ZoneId,d.DeviceType,s.ControlMode,s.IsOn,s.UpdatedAt FROM dbo.Devices d LEFT JOIN dbo.DeviceControlSettings s ON s.DeviceId=d.DeviceId WHERE d.DeviceType<>'SENSOR' ORDER BY d.DeviceId",
-            timezone="Asia/Ho_Chi_Minh",
-        )
-    )
+    sql = "SELECT d.DeviceId,d.DeviceName,d.ZoneId,d.DeviceType,s.ControlMode,s.IsOn,s.UpdatedAt FROM dbo.Devices d LEFT JOIN dbo.DeviceControlSettings s ON s.DeviceId=d.DeviceId WHERE d.DeviceType<>'SENSOR'"
+    params = []
+    if session.get("role") == "STAFF":
+        sql += " AND d.ZoneId IN (SELECT ZoneId FROM dbo.Zones WHERE HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?))"
+        params = [g.user["UserID"]]
+    sql += " ORDER BY d.DeviceId"
+    return ok(db.query(sql, params, timezone="Asia/Ho_Chi_Minh"))
 
 
 @bp.post("/api/controls/<int:device_id>")
 @role_required("ADMIN", "STAFF")
 def control(device_id):
     data = json_body()
+    require_device_access(device_id)
     action = choice(data, "action", {"SET_MODE", "MANUAL", "AUTO"})
     params = {"DeviceId": device_id, "UserId": g.user["UserID"], "Action": action}
     if action == "SET_MODE":

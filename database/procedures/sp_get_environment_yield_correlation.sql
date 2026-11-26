@@ -39,7 +39,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_GetEnvironmentYieldCorrelation
     @HouseId INT = NULL,
     @ZoneId  INT = NULL,
     @From    DATETIME2 = NULL,
-    @To      DATETIME2 = NULL
+    @To      DATETIME2 = NULL,
+    @ManagerId INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -48,6 +49,7 @@ BEGIN
     -- mac dinh 30 ngay lich gan nhat tinh ca hom nay.
     IF (@HouseId IS NOT NULL AND @HouseId <= 0)
        OR (@ZoneId IS NOT NULL AND @ZoneId <= 0)
+       OR (@ManagerId IS NOT NULL AND @ManagerId <= 0)
        OR (@From IS NULL AND @To IS NOT NULL)
        OR (@From IS NOT NULL AND @To IS NULL)
         THROW 52720, N'Bo loc nha/khu hoac khoang ngay khong hop le: can ca From va To, hoac de trong ca hai.', 1;
@@ -79,7 +81,7 @@ BEGIN
     ),
     Houses AS (
         SELECT HouseId, HouseName FROM dbo.SwiftletHouses
-        WHERE @HouseId IS NULL OR HouseId = @HouseId
+        WHERE (@HouseId IS NULL OR HouseId = @HouseId) AND (@ManagerId IS NULL OR ManagerId = @ManagerId)
     ),
     -- Moi truong theo nha x ngay; nguong lay cua chinh zone chua cam bien.
     EnvDaily AS (
@@ -102,6 +104,7 @@ BEGIN
         FROM dbo.SensorReadings r
         JOIN dbo.Devices d ON d.DeviceId = r.DeviceId AND d.DeviceType = 'SENSOR'
         JOIN dbo.Zones z ON z.ZoneId = d.ZoneId
+        JOIN dbo.SwiftletHouses sh ON sh.HouseId = z.HouseId AND (@ManagerId IS NULL OR sh.ManagerId = @ManagerId)
         LEFT JOIN dbo.EnvironmentThresholds t ON t.ZoneId = z.ZoneId
         WHERE r.RecordeAt >= @From AND r.RecordeAt < @To
           AND (@HouseId IS NULL OR z.HouseId = @HouseId)
@@ -115,6 +118,7 @@ BEGIN
                COUNT_BIG(*) AS AlertCount
         FROM dbo.Alerts a
         JOIN dbo.Zones z ON z.ZoneId = a.ZoneId
+        JOIN dbo.SwiftletHouses sh ON sh.HouseId = z.HouseId AND (@ManagerId IS NULL OR sh.ManagerId = @ManagerId)
         WHERE a.CreatedAt >= @From AND a.CreatedAt < @To
           AND (@HouseId IS NULL OR z.HouseId = @HouseId)
           AND (@ZoneId IS NULL OR z.ZoneId = @ZoneId)
@@ -133,6 +137,7 @@ BEGIN
         FROM dbo.BirdMovementEvents
         WHERE ObservedAt >= @From AND ObservedAt < @To
           AND (@HouseId IS NULL OR HouseId = @HouseId)
+          AND (@ManagerId IS NULL OR EXISTS (SELECT 1 FROM dbo.SwiftletHouses h WHERE h.HouseId = BirdMovementEvents.HouseId AND h.ManagerId = @ManagerId))
         GROUP BY HouseId, CONVERT(DATE, ObservedAt)
     ),
     Daily AS (

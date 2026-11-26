@@ -31,6 +31,9 @@ USER = {"UserID": 7, "UserName": "admin", "Role": "ADMIN", "IsActive": True}
 # Chi nha 1 ton tai trong DB gia lap; nha khac -> 404 HOUSE_NOT_FOUND.
 EXISTING_HOUSE_IDS = {1}
 
+# Chi khu 2 (thuoc nha 1) ton tai trong DB gia lap; khu khac -> 404.
+EXISTING_ZONES = {2: 1}
+
 # Hai dong mau dung dang SP tra (1 dong = 1 nha x 1 ngay, kem he so Pearson
 # da tinh san trong tung dong). Route tra nguyen cac dong nay trong data.
 ROWS = [
@@ -89,6 +92,13 @@ def fake_query(sql, params=()):
     if "FROM dbo.SwiftletHouses" in sql:
         house_id = params[0] if params else None
         return [{"HouseId": house_id}] if house_id in EXISTING_HOUSE_IDS else []
+    if "FROM dbo.Zones" in sql:
+        zone_id = params[0] if params else None
+        return (
+            [{"HouseId": EXISTING_ZONES[zone_id]}]
+            if zone_id in EXISTING_ZONES
+            else []
+        )
     return []
 
 

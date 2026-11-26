@@ -532,12 +532,95 @@ def test_27(c):
         pass
 
 
+def test_28(c):
+    # P5: phan quyen theo nha (ManagerId) + tong quan nha.
+    # Nha A: fixture (user ADMIN lam quan ly). Nha B: user STAFF lam quan ly.
+    f = fixture(c)
+    user_b = insert_id(c, """INSERT dbo.Users(UserName,PasswordHash,FullName,Role)
+        OUTPUT inserted.UserID VALUES (?,N'TEST_ONLY',N'QA manager B','STAFF')""", "qa_" + uuid.uuid4().hex)
+    house_b = insert_id(c, """INSERT dbo.SwiftletHouses(HouseName,ManagerId)
+        OUTPUT inserted.HouseId VALUES (N'QA house B',?)""", user_b)
+    zone_b = insert_id(c, """INSERT dbo.Zones(HouseId,ZoneName)
+        OUTPUT inserted.ZoneId VALUES (?,N'QA zone B')""", house_b)
+    c.execute("""INSERT dbo.EnvironmentThresholds
+        (ZoneId,MinTemperature,MaxTemperature,MinHumidity,MaxHumidity)
+        VALUES (?,25,33,65,95)""", zone_b)
+    dev_b = insert_id(c, """INSERT dbo.Devices(ZoneId,DeviceName,DeviceType)
+        OUTPUT inserted.DeviceId VALUES (?,N'QA sensor B','SENSOR')""", zone_b)
+    # Nha A: 2 so do trong nguong, sau do 1 so do vuot nhiet qua SP (tao alert).
+    for at, t in (('2026-01-15T09:00:00',28),('2026-01-15T10:00:00',30)):
+        c.execute('INSERT dbo.SensorReadings(DeviceId,Temperature,Humidity,RecordeAt) VALUES (?,?,80,?)', f['device'], t, at)
+    breach = reading(c, f, 40, 80, str(uuid.uuid4()))
+    require(breach['Code'] == 'OK' and breach['AlertCount'] == 1,
+            'QA28 breach reading must create one HIGH_TEMP alert: ' + str(breach))
+    # Nha B: chi so do trong nguong, khong co alert.
+    for at, t in (('2026-01-15T09:00:00',28),('2026-01-15T10:00:00',29)):
+        c.execute('INSERT dbo.SensorReadings(DeviceId,Temperature,Humidity,RecordeAt) VALUES (?,?,80,?)', dev_b, t, at)
+
+    def dashboard(zone=None, house=None, manager=None):
+        return rows(c, """EXEC dbo.sp_GetZoneDashboard
+            @ZoneId=?,@HouseId=?,@ManagerId=?""", zone, house, manager)
+
+    def overview(manager=None):
+        return rows(c, "EXEC dbo.sp_GetHouseOverview @ManagerId=?", manager)
+
+    # (a) Dashboard: loc theo HouseId va ManagerId; cot HouseId phai co.
+    only_a = dashboard(house=f['house'])
+    require(len(only_a) == 1 and only_a[0]['HouseId'] == f['house']
+            and only_a[0]['ZoneId'] == f['zone'],
+            'QA28 dashboard @HouseId=A must return only zone A')
+    require(only_a[0]['EnvironmentStatus'] == 'WARNING',
+            'QA28 zone A must be WARNING (latest reading 40C): ' + str(only_a[0]))
+    only_b = dashboard(house=house_b)
+    require(len(only_b) == 1 and only_b[0]['HouseId'] == house_b,
+            'QA28 dashboard @HouseId=B must return only zone B')
+    require(only_b[0]['EnvironmentStatus'] == 'NORMAL',
+            'QA28 zone B must be NORMAL')
+    mgr_b = dashboard(manager=user_b)
+    require(len(mgr_b) == 1 and mgr_b[0]['HouseId'] == house_b,
+            'QA28 dashboard @ManagerId=B must return only house B zones')
+    mgr_a = dashboard(manager=f['user'])
+    require(len(mgr_a) == 1 and mgr_a[0]['HouseId'] == f['house'],
+            'QA28 dashboard @ManagerId=A must return only house A zones')
+
+    # (b) Overview: 2 nha; A WARNING (1 khu vuot + 1 alert mo), B NORMAL.
+    all_houses = {r['HouseId']: r for r in overview()}
+    require(len(all_houses) == 2, 'QA28 overview must return 2 houses')
+    row_a, row_b = all_houses[f['house']], all_houses[house_b]
+    require(row_a['ManagerName'] is not None and row_b['ManagerName'] == 'QA manager B',
+            'QA28 overview ManagerName wrong')
+    require((row_a['ZoneCount'], row_a['DeviceCount'], row_a['OpenAlertCount'],
+             row_a['WarningZoneCount'], row_a['OverallStatus']) == (1, 1, 1, 1, 'WARNING'),
+            'QA28 overview house A wrong: ' + str(row_a))
+    require((row_b['ZoneCount'], row_b['DeviceCount'], row_b['OpenAlertCount'],
+             row_b['WarningZoneCount'], row_b['OverallStatus']) == (1, 1, 0, 0, 'NORMAL'),
+            'QA28 overview house B wrong: ' + str(row_b))
+
+    # (c) Overview theo ManagerId=B: chi 1 dong, dung nha B.
+    only_b_over = overview(user_b)
+    require(len(only_b_over) == 1 and only_b_over[0]['HouseId'] == house_b,
+            'QA28 overview @ManagerId=B must return only house B')
+
+    # (d) Tham so khong hop le phai THROW.
+    for sql, args in (
+        ("EXEC dbo.sp_GetZoneDashboard @ZoneId=?,@HouseId=?,@ManagerId=?", (None, -1, None)),
+        ("EXEC dbo.sp_GetZoneDashboard @ZoneId=?,@HouseId=?,@ManagerId=?", (None, None, 0)),
+        ("EXEC dbo.sp_GetHouseOverview @ManagerId=?", (0,)),
+    ):
+        threw = False
+        try:
+            rows(c, sql, *args)
+        except Exception:
+            threw = True
+        require(threw, 'QA28 invalid params must THROW: ' + sql + ' ' + str(args))
+
+
 AUTOMATED={
     1:test_01,2:test_02,3:test_03,4:test_04,5:test_05,6:test_06,
     7:test_07,8:test_08,9:test_09,10:test_10,11:test_11,12:test_12,
     13:test_13,14:test_14,15:test_15,16:test_16,17:test_17,18:test_18,
     19:test_19,
-    23:test_23,25:test_25,26:test_26,27:test_27,
+    23:test_23,25:test_25,26:test_26,27:test_27,28:test_28,
 }
 MANUAL={
     20:'Use separate STAFF/ADMIN/Ingest logins; never simulate permissions with an admin connection',
@@ -548,7 +631,7 @@ MANUAL={
 
 
 def main():
-    p=argparse.ArgumentParser(description='TV4 SQL QA (23 automated + 4 NOT TESTED/manual)')
+    p=argparse.ArgumentParser(description='TV4 SQL QA (24 automated + 4 NOT TESTED/manual)')
     p.add_argument('--strict',action='store_true',help='non-zero if any NOT TESTED')
     args=p.parse_args()
     connection_string=os.getenv('QA_CONN_STR')
@@ -570,7 +653,7 @@ def main():
     except Exception as e:
         print('PREFLIGHT FAIL:',type(e).__name__,e,file=sys.stderr)
         return 2
-    for number in range(1,28):
+    for number in range(1,29):
         name=f'QA{number:02d}'
         if number in MANUAL:
             summary['NOT TESTED']+=1

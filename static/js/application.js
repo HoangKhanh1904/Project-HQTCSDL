@@ -22,9 +22,13 @@
       columns: [
         ["HouseId", "Mã"],
         ["HouseName", "Nhà yến"],
-        ["Address", "Địa chỉ"],
-        ["ManagerId", "Quản lý"],
+        ["ManagerName", "Quản lý"],
         ["Status", "Trạng thái"],
+        ["ZoneCount", "Số khu vực"],
+        ["DeviceCount", "Số thiết bị"],
+        ["OpenAlertCount", "Cảnh báo đang mở"],
+        ["WarningZoneCount", "Khu vực vượt ngưỡng"],
+        ["OverallStatus", "Tổng quan"],
       ],
     },
     areas: {
@@ -342,7 +346,15 @@
           .slice(0, 16);
       }
     }
-    if (["dashboard", "alerts", "controls"].includes(page)) {
+    if (page === "dashboard") {
+      field(filters, "house_id", "Nhà yến", {
+        choices: [
+          ["", "Tất cả nhà yến"],
+          ...selectChoices(houses, "HouseId", "HouseName"),
+        ],
+      });
+    }
+    if (["alerts", "controls"].includes(page)) {
       filters.hidden = true;
       return;
     }
@@ -638,13 +650,18 @@
     $("refresh").disabled = true;
     message("Đang tải dữ liệu…");
     try {
-      if (configs[page]) {
+      if (page === "farms") {
+        const rows = await api("/farms/overview");
+        items = rows;
+        total = rows.length;
+        renderEntity();
+      } else if (configs[page]) {
         const d = await api(`/${page}?page=${pageNo}&limit=${size}`);
         items = d.items;
         total = d.total;
         renderEntity();
       } else if (page === "dashboard") {
-        const d = await api("/dashboard/zones");
+        const d = await api("/dashboard/zones?" + params());
         items = d.zones;
         table(
           [

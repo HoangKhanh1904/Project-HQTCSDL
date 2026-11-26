@@ -15,6 +15,7 @@ IF OBJECT_ID('dbo.sp_AcknowledgeAlert', 'P') IS NULL
    OR OBJECT_ID('dbo.sp_GetSensorHistory', 'P') IS NULL
    OR OBJECT_ID('dbo.sp_GetUnresolvedAlerts', 'P') IS NULL
    OR OBJECT_ID('dbo.sp_GetZoneDashboard', 'P') IS NULL
+   OR OBJECT_ID('dbo.sp_GetHouseOverview', 'P') IS NULL
    OR OBJECT_ID('dbo.sp_InsertBirdMovement', 'P') IS NULL
    OR OBJECT_ID('dbo.sp_GetBirdMovementDaily', 'P') IS NULL
    OR OBJECT_ID('dbo.sp_GetEnvironmentMetrics', 'P') IS NULL
@@ -125,6 +126,7 @@ BEGIN TRY
     GRANT EXECUTE ON dbo.sp_GetBirdMovementDaily TO SwiftletAdmin,SwiftletStaff;
     GRANT EXECUTE ON dbo.sp_GetEnvironmentMetrics TO SwiftletAdmin,SwiftletStaff;
     GRANT EXECUTE ON dbo.sp_GetEnvironmentYieldCorrelation TO SwiftletAdmin,SwiftletStaff;
+    GRANT EXECUTE ON dbo.sp_GetHouseOverview TO SwiftletAdmin,SwiftletStaff;
     GRANT EXECUTE ON dbo.sp_GetSimulatedSystemEvents TO SwiftletAdmin,SwiftletStaff;
     GRANT EXECUTE ON dbo.sp_InsertSimulatedSystemEvent TO SwiftletAdmin,SwiftletIngest;
     DENY EXECUTE ON dbo.sp_InsertSimulatedSystemEvent TO SwiftletStaff;
@@ -135,6 +137,7 @@ BEGIN TRY
     DENY EXECUTE ON dbo.sp_GetBirdMovementDaily TO SwiftletIngest;
     DENY EXECUTE ON dbo.sp_GetEnvironmentMetrics TO SwiftletIngest;
     DENY EXECUTE ON dbo.sp_GetEnvironmentYieldCorrelation TO SwiftletIngest;
+    DENY EXECUTE ON dbo.sp_GetHouseOverview TO SwiftletIngest;
     DENY EXECUTE ON dbo.sp_GetSimulatedSystemEvents TO SwiftletIngest;
     DENY EXECUTE ON dbo.sp_TransitionAlert TO SwiftletAdmin,SwiftletStaff,SwiftletIngest;
 

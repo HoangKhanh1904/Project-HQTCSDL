@@ -67,6 +67,122 @@ def role_required(*roles):
     return decorator
 
 
+def managed_house_ids():
+    """HouseId các nhà user hiện tại quản lý; ADMIN trả về None (không giới hạn)."""
+    if session.get("role") == "ADMIN":
+        return None
+    from . import db
+
+    rows = db.query(
+        "SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?",
+        [g.user["UserID"]],
+    )
+    return [int(row["HouseId"]) for row in rows]
+
+
+def require_house_access(house_id):
+    """Trả về dòng nhà nếu nhà tồn tại và user có quyền xem, ngược lại raise."""
+    from . import db
+
+    rows = db.query(
+        "SELECT HouseId FROM dbo.SwiftletHouses WHERE HouseId=?",
+        [house_id],
+    )
+    if not rows:
+        raise ApiError(404, "HOUSE_NOT_FOUND", "Nhà yến không tồn tại.")
+    managed = managed_house_ids()
+    if managed is not None:
+        try:
+            wanted = int(house_id)
+        except (TypeError, ValueError):
+            wanted = house_id
+        if wanted not in managed:
+            raise ApiError(
+                403, "HOUSE_FORBIDDEN", "Bạn không có quyền xem nhà yến này."
+            )
+    return rows[0]
+
+
+def house_of_zone(zone_id):
+    """HouseId của khu vực, hoặc None nếu khu vực không tồn tại."""
+    from . import db
+
+    rows = db.query(
+        "SELECT HouseId FROM dbo.Zones WHERE ZoneId=?",
+        [zone_id],
+    )
+    if not rows:
+        return None
+    return int(rows[0]["HouseId"])
+
+
+def require_zone_access(zone_id):
+    house = house_of_zone(zone_id)
+    if house is None:
+        raise ApiError(404, "ZONE_NOT_FOUND", "Khu vực không tồn tại.")
+    return require_house_access(house)
+
+
+def house_of_device(device_id):
+    """HouseId của thiết bị (qua khu vực chứa nó), hoặc None nếu không tồn tại."""
+    from . import db
+
+    rows = db.query(
+        "SELECT z.HouseId FROM dbo.Devices d JOIN dbo.Zones z ON z.ZoneId=d.ZoneId WHERE d.DeviceId=?",
+        [device_id],
+    )
+    if not rows:
+        return None
+    return int(rows[0]["HouseId"])
+
+
+def require_device_access(device_id):
+    house = house_of_device(device_id)
+    if house is None:
+        raise ApiError(404, "DEVICE_NOT_FOUND", "Thiết bị không tồn tại.")
+    return require_house_access(house)
+
+
+def house_of_alert(alert_id):
+    """HouseId của cảnh báo (qua khu vực của nó), hoặc None nếu không tồn tại."""
+    from . import db
+
+    rows = db.query(
+        "SELECT z.HouseId FROM dbo.Alerts a JOIN dbo.Zones z ON z.ZoneId=a.ZoneId WHERE a.AlertId=?",
+        [alert_id],
+    )
+    if not rows:
+        return None
+    return int(rows[0]["HouseId"])
+
+
+def require_alert_access(alert_id):
+    house = house_of_alert(alert_id)
+    if house is None:
+        raise ApiError(404, "ALERT_NOT_FOUND", "Cảnh báo không tồn tại.")
+    return require_house_access(house)
+
+
+def house_of_event(event_id):
+    """HouseId của sự kiện mô phỏng, hoặc None nếu sự kiện không tồn tại."""
+    from . import db
+
+    rows = db.query(
+        "SELECT HouseId FROM dbo.SimulatedSystemEvents WHERE EventId=?",
+        [event_id],
+    )
+    if not rows:
+        return None
+    return int(rows[0]["HouseId"])
+
+
+def require_event_access(event_id):
+    house = house_of_event(event_id)
+    if house is None:
+        raise ApiError(404, "EVENT_NOT_FOUND", "Sự kiện không tồn tại.")
+    return require_house_access(house)
+
+
 def protect_mutation():
     if (
         request.path.startswith("/api/")

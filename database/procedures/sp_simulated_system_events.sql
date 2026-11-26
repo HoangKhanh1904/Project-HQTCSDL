@@ -115,13 +115,14 @@ BEGIN
 END;
 GO
 CREATE OR ALTER PROCEDURE dbo.sp_GetSimulatedSystemEvents
-    @HouseId INT=NULL,@ZoneId INT=NULL,@Status VARCHAR(12)=NULL,@Limit INT=100
+    @HouseId INT=NULL,@ZoneId INT=NULL,@Status VARCHAR(12)=NULL,@Limit INT=100,@ManagerId INT=NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     IF (@HouseId IS NOT NULL AND @HouseId<=0) OR (@ZoneId IS NOT NULL AND @ZoneId<=0)
        OR (@Status IS NOT NULL AND @Status NOT IN ('NEW','ACKNOWLEDGED','RESOLVED'))
        OR @Limit IS NULL OR @Limit NOT BETWEEN 1 AND 1000
+       OR (@ManagerId IS NOT NULL AND @ManagerId<=0)
         THROW 52713,'Invalid event filters or limit.',1;
     -- NULL status means unresolved. Explicit RESOLVED retrieves resolved events.
     SELECT TOP(@Limit) EventId,HouseId,ZoneId,DeviceId,EventType,Severity,EventAt,CreatedAt,
@@ -129,6 +130,7 @@ BEGIN
     FROM dbo.SimulatedSystemEvents
     WHERE (@HouseId IS NULL OR HouseId=@HouseId) AND (@ZoneId IS NULL OR ZoneId=@ZoneId)
       AND ((@Status IS NULL AND Status IN ('NEW','ACKNOWLEDGED')) OR Status=@Status)
+      AND (@ManagerId IS NULL OR HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=@ManagerId))
     ORDER BY EventAt DESC,EventId DESC;
 END;
 GO
