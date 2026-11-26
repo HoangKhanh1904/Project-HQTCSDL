@@ -4,7 +4,7 @@
 <script defer src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 <script defer src="{{ url_for('static',filename='js/application.js') }}"></script></head>
 <body data-page="{{ page }}"><aside><a class="brand" href="/">🌿 SwiftletCare</a><p>KHÔNG GIAN QUẢN LÝ</p>
-<nav>{% for key,label in [('dashboard','Tổng quan'),('farms','Nhà yến'),('areas','Khu vực & ngưỡng'),('devices','Thiết bị'),('sensors','Dữ liệu cảm biến'),('alerts','Cảnh báo'),('birds','Lượt chim ra / vào'),('events','Sự kiện mô phỏng'),('controls','Điều khiển mô phỏng')] %}
+<nav>{% for key,label in [('dashboard','Tổng quan'),('farms','Nhà yến'),('areas','Khu vực & ngưỡng'),('devices','Thiết bị'),('sensors','Dữ liệu cảm biến'),('alerts','Cảnh báo'),('birds','Lượt chim ra / vào'),('analytics','Báo cáo tương quan'),('events','Sự kiện mô phỏng'),('controls','Điều khiển mô phỏng')] %}
 <a href="/{{ '' if key == 'dashboard' else key }}" {% if page==key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
 <small>Dữ liệu từ SQL Server<br>Điều khiển trong ứng dụng là mô phỏng.</small></aside>
 <main><header><span>SWIFTLETCARE / APPLICATION</span><a id="alertBell" href="/alerts">Cảnh báo (<span id="alertBellCount">0</span>)</a><div id="account"></div></header>

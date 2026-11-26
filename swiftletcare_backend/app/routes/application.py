@@ -118,6 +118,7 @@ def page(page="dashboard"):
         "sensors",
         "alerts",
         "birds",
+        "analytics",
         "events",
         "controls",
         "login",
@@ -502,6 +503,37 @@ def birds():
         rows_proc(
             "sp_GetBirdMovementDaily",
             {"HouseId": house, "From": dates[0], "To": dates[1]},
+        )
+    )
+
+
+@bp.get("/api/analytics/correlation")
+@login_required
+def analytics_correlation():
+    """P4: bao cao tuong quan moi truong - chim ra/vao theo nha va khoang ngay.
+
+    Goi SP sp_GetEnvironmentYieldCorrelation(@HouseId, @ZoneId, @From, @To):
+    moi dong = 1 nha x 1 ngay (ReportDate): so gio trong nguong uoc tinh,
+    ti le thoi gian trong nguong, tong chim IN/OUT va chenh lech (IN - OUT).
+    ZoneId/ZoneName chi la tham so loc (NULL khi khong loc khu); phan chim
+    luon la cap nha vi BirdMovementEvents khong co ZoneId.
+    house_id/zone_id tuy chon (bo trong = tat ca); from/to bat buoc, co mui gio.
+    """
+    start, end = period(required=True)
+    house = query_id("house_id")
+    if house is not None and not db.query(
+        "SELECT HouseId FROM dbo.SwiftletHouses WHERE HouseId=?", [house]
+    ):
+        raise ApiError(404, "HOUSE_NOT_FOUND", "Nhà yến không tồn tại.")
+    return ok(
+        rows_proc(
+            "sp_GetEnvironmentYieldCorrelation",
+            {
+                "HouseId": house,
+                "ZoneId": query_id("zone_id"),
+                "From": start,
+                "To": end,
+            },
         )
     )
 

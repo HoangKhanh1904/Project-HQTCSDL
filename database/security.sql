@@ -124,6 +124,7 @@ BEGIN TRY
     GRANT EXECUTE ON dbo.sp_InsertBirdMovement TO SwiftletAdmin,SwiftletStaff,SwiftletIngest;
     GRANT EXECUTE ON dbo.sp_GetBirdMovementDaily TO SwiftletAdmin,SwiftletStaff;
     GRANT EXECUTE ON dbo.sp_GetEnvironmentMetrics TO SwiftletAdmin,SwiftletStaff;
+    GRANT EXECUTE ON dbo.sp_GetEnvironmentYieldCorrelation TO SwiftletAdmin,SwiftletStaff;
     GRANT EXECUTE ON dbo.sp_GetSimulatedSystemEvents TO SwiftletAdmin,SwiftletStaff;
     GRANT EXECUTE ON dbo.sp_InsertSimulatedSystemEvent TO SwiftletAdmin,SwiftletIngest;
     DENY EXECUTE ON dbo.sp_InsertSimulatedSystemEvent TO SwiftletStaff;
@@ -133,6 +134,7 @@ BEGIN TRY
     DENY EXECUTE ON dbo.sp_UpdateSimulatedEventStatus TO SwiftletIngest;
     DENY EXECUTE ON dbo.sp_GetBirdMovementDaily TO SwiftletIngest;
     DENY EXECUTE ON dbo.sp_GetEnvironmentMetrics TO SwiftletIngest;
+    DENY EXECUTE ON dbo.sp_GetEnvironmentYieldCorrelation TO SwiftletIngest;
     DENY EXECUTE ON dbo.sp_GetSimulatedSystemEvents TO SwiftletIngest;
     DENY EXECUTE ON dbo.sp_TransitionAlert TO SwiftletAdmin,SwiftletStaff,SwiftletIngest;
 

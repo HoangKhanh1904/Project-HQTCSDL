@@ -448,12 +448,96 @@ def test_26(c):
             'QA26 NULL lux phai la READING_UNAVAILABLE: '+str(no_lux))
 
 
+def test_27(c):
+    # P4: bao cao tuong quan on dinh moi truong vs chim ra/vao.
+    # SP sp_GetEnvironmentYieldCorrelation, 1 dong = 1 nha x 1 ngay.
+    # Pearson chi tinh khi co toi thieu 3 ngay co InRangePct; 2 ngay thi
+    # Pearson NULL + CorrelationStrength = 'INSUFFICIENT_DATA'.
+    f = fixture(c)
+    dev = f['device']
+    # Ngay 15/01: 3/4 so do trong nguong -> 75%; ngay 16/01: 4/4 -> 100%.
+    for at, t in (('2026-01-15T09:00:00',28),('2026-01-15T10:00:00',30),
+                  ('2026-01-15T11:00:00',28),('2026-01-15T12:00:00',40)):
+        c.execute('INSERT dbo.SensorReadings(DeviceId,Temperature,Humidity,RecordeAt) VALUES (?,?,80,?)',dev,t,at)
+    for at, t in (('2026-01-16T09:00:00',28),('2026-01-16T10:00:00',29),
+                  ('2026-01-16T11:00:00',27),('2026-01-16T12:00:00',28)):
+        c.execute('INSERT dbo.SensorReadings(DeviceId,Temperature,Humidity,RecordeAt) VALUES (?,?,80,?)',dev,t,at)
+    # Chim: 15/01 IN 5 / OUT 3 (rong +2); 16/01 IN 12 / OUT 2 (rong +10).
+    for direction,count,at in (('IN',5,'2026-01-15T10:00:00'),('OUT',3,'2026-01-15T11:00:00'),
+                               ('IN',12,'2026-01-16T10:00:00'),('OUT',2,'2026-01-16T11:00:00')):
+        require(bird(c,f,direction,count,at,event=str(uuid.uuid4()))['Code']=='OK','QA27 bird ingest')
+
+    def report(house, zone, start, end):
+        return rows(c, """EXEC dbo.sp_GetEnvironmentYieldCorrelation
+            @HouseId=?,@ZoneId=?,@From=?,@To=?""", house, zone, start, end)
+
+    def by_date(rs):
+        return {str(r['ReportDate'])[:10]: r for r in rs}
+
+    # (a) Khoang 2 ngay: Pearson phai NULL, INSUFFICIENT_DATA.
+    two = by_date(report(f['house'], f['zone'], '2026-01-15', '2026-01-17'))
+    require(len(two) == 2, 'QA27 khoang 2 ngay phai tra 2 dong ngay: ' + str(sorted(two)))
+    d15, d16 = two['2026-01-15'], two['2026-01-16']
+    require(d15['ReadingCount'] == 4 and d16['ReadingCount'] == 4,
+            'QA27 moi ngay phai co 4 so do')
+    require(abs(float(d15['AvgTemperature']) - 31.5) < 0.01 and abs(float(d16['AvgTemperature']) - 28.0) < 0.01,
+            'QA27 AvgTemperature sai: ' + str((d15['AvgTemperature'], d16['AvgTemperature'])))
+    require(float(d15['AvgHumidity']) == 80 and float(d16['AvgHumidity']) == 80,
+            'QA27 AvgHumidity sai')
+    require(float(d15['InRangePct']) == 75 and float(d16['InRangePct']) == 100,
+            'QA27 InRangePct phai 75/100: ' + str((d15['InRangePct'], d16['InRangePct'])))
+    require((d15['BirdInCount'], d15['BirdOutCount'], d15['NetMovement']) == (5, 3, 2),
+            'QA27 chim ngay 15/01 sai: ' + str(d15))
+    require((d16['BirdInCount'], d16['BirdOutCount'], d16['NetMovement']) == (12, 2, 10),
+            'QA27 chim ngay 16/01 sai: ' + str(d16))
+    require(d15['PearsonInRangeVsNet'] is None and d16['PearsonInRangeVsNet'] is None,
+            'QA27 Pearson phai NULL khi chi co 2 ngay')
+    require(d15['CorrelationStrength'] == 'INSUFFICIENT_DATA' and d16['CorrelationStrength'] == 'INSUFFICIENT_DATA',
+            'QA27 CorrelationStrength phai INSUFFICIENT_DATA khi chi co 2 ngay')
+
+    # (b) Them ngay 17/01: 2/4 trong nguong -> 50%; chim OUT 6 -> rong -6.
+    # 3 diem (75,+2),(100,+10),(50,-6) thang hang (he so goc 0.32) nen r = 1.0.
+    for at, t in (('2026-01-17T09:00:00',28),('2026-01-17T10:00:00',30),
+                  ('2026-01-17T11:00:00',40),('2026-01-17T12:00:00',20)):
+        c.execute('INSERT dbo.SensorReadings(DeviceId,Temperature,Humidity,RecordeAt) VALUES (?,?,80,?)',dev,t,at)
+    require(bird(c,f,'OUT',6,'2026-01-17T10:00:00',event=str(uuid.uuid4()))['Code']=='OK','QA27 bird ngay 17/01')
+    three = by_date(report(f['house'], f['zone'], '2026-01-15', '2026-01-18'))
+    require(len(three) == 3, 'QA27 khoang 3 ngay phai tra 3 dong ngay')
+    d17 = three['2026-01-17']
+    require(float(d17['InRangePct']) == 50, 'QA27 InRangePct ngay 17/01 phai 50')
+    require((d17['BirdInCount'], d17['BirdOutCount'], d17['NetMovement']) == (0, 6, -6),
+            'QA27 chim ngay 17/01 sai: ' + str(d17))
+    for day, r in three.items():
+        require(r['PearsonInRangeVsNet'] is not None and abs(float(r['PearsonInRangeVsNet']) - 1.0) < 0.001,
+                'QA27 Pearson phai = 1.0 voi 3 ngay thang hang, ngay ' + day + ': ' + str(r['PearsonInRangeVsNet']))
+        require(r['CorrelationStrength'] == 'STRONG_POSITIVE',
+                'QA27 CorrelationStrength phai STRONG_POSITIVE, ngay ' + day)
+    hours = [float(three[d]['EstimatedHoursInRange']) for d in ('2026-01-17','2026-01-15','2026-01-16')]
+    require(all(0 <= h <= 24 for h in hours) and hours == sorted(hours),
+            'QA27 EstimatedHoursInRange phai trong [0,24] va tang theo %: ' + str(hours))
+
+    # (c) Khu chua cau hinh nguong: % phai NULL (khong phai 0 hay 100 gia).
+    g = fixture(c, threshold=False, sensor=True)
+    c.execute('INSERT dbo.SensorReadings(DeviceId,Temperature,Humidity,RecordeAt) VALUES (?,?,80,?)',
+              g['device'], 28, '2026-01-15T10:00:00')
+    unc = by_date(report(g['house'], g['zone'], '2026-01-15', '2026-01-17'))
+    require(len(unc) >= 1 and all(r['InRangePct'] is None for r in unc.values()),
+            'QA27 khu chua cau hinh nguong phai cho InRangePct NULL')
+
+    # (d) Khoang ngay nguoc phai THROW hoac tra khong co dong.
+    try:
+        bad = report(f['house'], f['zone'], '2026-01-17', '2026-01-15')
+        require(len(bad) == 0, 'QA27 khoang ngay nguoc phai THROW hoac khong co dong')
+    except pyodbc.Error:
+        pass
+
+
 AUTOMATED={
     1:test_01,2:test_02,3:test_03,4:test_04,5:test_05,6:test_06,
     7:test_07,8:test_08,9:test_09,10:test_10,11:test_11,12:test_12,
     13:test_13,14:test_14,15:test_15,16:test_16,17:test_17,18:test_18,
     19:test_19,
-    23:test_23,25:test_25,26:test_26,
+    23:test_23,25:test_25,26:test_26,27:test_27,
 }
 MANUAL={
     20:'Use separate STAFF/ADMIN/Ingest logins; never simulate permissions with an admin connection',
@@ -464,7 +548,7 @@ MANUAL={
 
 
 def main():
-    p=argparse.ArgumentParser(description='TV4 SQL QA (22 automated + 4 NOT TESTED/manual)')
+    p=argparse.ArgumentParser(description='TV4 SQL QA (23 automated + 4 NOT TESTED/manual)')
     p.add_argument('--strict',action='store_true',help='non-zero if any NOT TESTED')
     args=p.parse_args()
     connection_string=os.getenv('QA_CONN_STR')
@@ -486,7 +570,7 @@ def main():
     except Exception as e:
         print('PREFLIGHT FAIL:',type(e).__name__,e,file=sys.stderr)
         return 2
-    for number in range(1,27):
+    for number in range(1,28):
         name=f'QA{number:02d}'
         if number in MANUAL:
             summary['NOT TESTED']+=1

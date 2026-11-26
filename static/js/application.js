@@ -11,6 +11,7 @@
     sensors: "Dữ liệu cảm biến",
     alerts: "Cảnh báo",
     birds: "Lượt chim ra / vào",
+    analytics: "Báo cáo tương quan",
     events: "Sự kiện mô phỏng",
     controls: "Điều khiển mô phỏng",
   };
@@ -133,7 +134,7 @@
   function value(v, key = "") {
     if (v === null || v === undefined) return "Chưa có dữ liệu";
     if (typeof v === "boolean") return v ? "Bật" : "Tắt";
-    if (/At$|updated|RecordedAt/.test(key))
+    if (/At$|Date$|updated|RecordedAt/.test(key))
       return new Date(v).toLocaleString("vi-VN");
     return labels[v] || String(v);
   }
@@ -302,6 +303,20 @@
         choices: selectChoices(houses, "HouseId", "HouseName"),
       });
     }
+    if (page === "analytics") {
+      field(filters, "house_id", "Nhà yến", {
+        choices: [
+          ["", "Tất cả nhà yến"],
+          ...selectChoices(houses, "HouseId", "HouseName"),
+        ],
+      });
+      field(filters, "zone_id", "Khu vực", {
+        choices: [
+          ["", "Tất cả khu vực"],
+          ...selectChoices(zones, "ZoneId", "ZoneName"),
+        ],
+      });
+    }
     if (page === "events") {
       field(filters, "status", "Trạng thái", {
         choices: [
@@ -312,13 +327,16 @@
         ],
       });
     }
-    if (["sensors", "birds"].includes(page)) {
+    if (["sensors", "birds", "analytics"].includes(page)) {
       for (const [k, label] of [
         ["from", "Từ"],
         ["to", "Đến (không bao gồm)"],
       ]) {
         const input = field(filters, k, label, { type: "datetime-local" });
-        const d = new Date(Date.now() - (k === "from" ? 86400000 : 0));
+        // Báo cáo tương quan mặc định 7 ngày gần nhất; các trang khác 1 ngày.
+        const back =
+          k === "from" ? (page === "analytics" ? 7 * 86400000 : 86400000) : 0;
+        const d = new Date(Date.now() - back);
         input.value = new Date(d - d.getTimezoneOffset() * 60000)
           .toISOString()
           .slice(0, 16);
@@ -528,6 +546,92 @@
     $("chartNote").textContent =
       `${points.length} số đo · ${low} → ${high} · ${new Date(points[0].RecordeAt).toLocaleString("vi-VN")} → ${new Date(points.at(-1).RecordeAt).toLocaleString("vi-VN")}. Mỗi đường là một cảm biến. Tối đa 1000 số đo mới nhất trong khoảng lọc.`;
   }
+  // P4: he so tuong quan Pearson giua hai chuoi so cung do dai.
+  // Can toi thieu 3 cap (khop SP: duoi 3 ngay co InRangePct thi
+  // PearsonInRangeVsNet la NULL, CorrelationStrength la INSUFFICIENT_DATA).
+  function pearson(pairs) {
+    if (pairs.length < 3) return null;
+    const mx = pairs.reduce((s, p) => s + p[0], 0) / pairs.length;
+    const my = pairs.reduce((s, p) => s + p[1], 0) / pairs.length;
+    let num = 0,
+      dx = 0,
+      dy = 0;
+    for (const [x, y] of pairs) {
+      num += (x - mx) * (y - my);
+      dx += (x - mx) ** 2;
+      dy += (y - my) ** 2;
+    }
+    if (!dx || !dy) return null;
+    return num / Math.sqrt(dx * dy);
+  }
+  function correlationNote(text) {
+    let note = $("analyticsNote");
+    if (!note) {
+      note = node("p");
+      note.id = "analyticsNote";
+      $("tablePanel").prepend(note);
+    }
+    note.textContent = text;
+  }
+  // P4: the tong hop + dien giai tuong quan cho trang analytics.
+  // Nang suat tam do bang luong chim ra/vao (chua co bang so to thu hoach).
+  function renderCorrelation() {
+    const num = (r, k) => (typeof r[k] === "number" ? r[k] : null);
+    const sum = (k) => items.reduce((s, r) => s + (num(r, k) ?? 0), 0);
+    // % trong nguong theo trong so: tong so do trong nguong / tong so do
+    // o khu da cau hinh nguong (dung dinh nghia InRangePct cua SP).
+    const configured = sum("ConfiguredReadingCount");
+    const inRangePct = configured
+      ? (sum("InRangeCount") / configured) * 100
+      : null;
+    const pairs = items
+      .map((r) => [num(r, "InRangePct"), num(r, "NetMovement")])
+      .filter(([x, y]) => x !== null && y !== null);
+    // Uu tien he so SP tinh san theo tung nha (PearsonInRangeVsNet +
+    // CorrelationStrength di kem tren moi dong); SP tra INSUFFICIENT_DATA
+    // khi duoi 3 ngay co InRangePct. Chi tu tinh o frontend khi SP
+    // khong tra hai cot nay.
+    const spStrength = items.length ? items[0].CorrelationStrength : null;
+    const spR = items.length ? num(items[0], "PearsonInRangeVsNet") : null;
+    const r =
+      spStrength === "INSUFFICIENT_DATA"
+        ? null
+        : spR !== null
+          ? spR
+          : pearson(pairs);
+    const enough = pairs.length >= 3 && r !== null;
+    $("dashboardSummary").hidden = false;
+    $("dashboardSummary").replaceChildren();
+    for (const [label, v] of [
+      ["Dòng dữ liệu (ngày × nhà yến)", items.length],
+      ["Tổng lượt chim vào", sum("BirdInCount")],
+      ["Tổng lượt chim ra", sum("BirdOutCount")],
+      ["Chênh lệch vào − ra", sum("NetMovement")],
+      [
+        "Tổng giờ ước tính trong ngưỡng",
+        sum("EstimatedHoursInRange").toFixed(1) + " giờ",
+      ],
+      [
+        "% trong ngưỡng (theo trọng số số đo)",
+        inRangePct === null ? "Chưa có dữ liệu" : inRangePct.toFixed(1) + " %",
+      ],
+      [
+        "Hệ số tương quan r (% trong ngưỡng ↔ chênh lệch chim)",
+        enough ? r.toFixed(2) : "Chưa đủ dữ liệu",
+      ],
+    ]) {
+      const card = node("div", undefined, "stat");
+      card.append(node("span", label), node("strong", v));
+      $("dashboardSummary").append(card);
+    }
+    correlationNote(
+      !enough
+        ? "Chưa đủ dữ liệu để kết luận tương quan: cần ít nhất 3 ngày có % trong ngưỡng (dưới 3 ngày SP trả PearsonInRangeVsNet là NULL và CorrelationStrength là INSUFFICIENT_DATA)."
+        : spStrength
+          ? `r = ${r.toFixed(2)}: CorrelationStrength = ${spStrength} (SP sp_GetEnvironmentYieldCorrelation tính sẵn theo từng nhà). Đây là tương quan thống kê trên dữ liệu mô phỏng, không phải quan hệ nhân quả.`
+          : `r = ${r.toFixed(2)}: tương quan ${Math.abs(r) >= 0.7 ? "mạnh" : Math.abs(r) >= 0.4 ? "trung bình" : "yếu"}, ${r > 0 ? "thuận — nhà/ngày có môi trường trong ngưỡng nhiều hơn có xu hướng chênh lệch chim vào cao hơn" : r < 0 ? "nghịch — % trong ngưỡng cao hơn đi cùng chênh lệch chim vào thấp hơn" : "gần như không có liên hệ tuyến tính"}. Đây là tương quan thống kê trên dữ liệu mô phỏng, không phải quan hệ nhân quả.`,
+    );
+  }
   async function load() {
     if (busy) return;
     busy = true;
@@ -601,6 +705,26 @@
           ],
           items,
         );
+      } else if (page === "analytics") {
+        const d = await api("/analytics/correlation?" + params());
+        items = Array.isArray(d) ? d : d.rows || d.items || [];
+        table(
+          [
+            ["ReportDate", "Ngày"],
+            ["HouseName", "Nhà yến"],
+            ["ZoneName", "Khu vực"],
+            ["ReadingCount", "Số số đo"],
+            ["InRangePct", "% trong ngưỡng"],
+            ["EstimatedHoursInRange", "Giờ trong ngưỡng (ước tính)"],
+            ["AvgTemperature", "Nhiệt độ TB (°C)"],
+            ["AvgHumidity", "Độ ẩm TB (%)"],
+            ["BirdInCount", "Chim vào"],
+            ["BirdOutCount", "Chim ra"],
+            ["NetMovement", "Chênh lệch vào − ra"],
+          ],
+          items,
+        );
+        renderCorrelation();
       } else if (page === "alerts") {
         items = await api("/alerts?limit=1000");
         table(
@@ -765,8 +889,10 @@
       $("description").textContent =
         page === "birds"
           ? "Thống kê lượt di chuyển; không phải tổng số chim đang cư trú."
-          : page === "controls"
-            ? "Thay đổi trạng thái mô phỏng trong ứng dụng. Chưa kết nối phần cứng."
+          : page === "analytics"
+            ? "Tương quan giữa ổn định môi trường (giờ trong ngưỡng) và lượng chim ra/vào, lọc theo nhà yến, khu vực và khoảng ngày. Năng suất tạm đo bằng lượng chim vì chưa có bảng số tổ thu hoạch."
+            : page === "controls"
+              ? "Thay đổi trạng thái mô phỏng trong ứng dụng. Chưa kết nối phần cứng."
             : "Theo dõi và quản lý dữ liệu nhà yến.";
       if (page === "login") {
         location.replace("/");
