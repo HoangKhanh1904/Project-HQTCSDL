@@ -33,6 +33,9 @@ SOURCE_FILES=[
     'database/concurrency/sp_get_environment_threshold.sql',
     'database/procedures/sp_create_environment_threshold.sql',
     'database/procedures/sp_get_environment_yield_correlation.sql',
+    'database/procedures/sp_get_zone_dashboard.sql',
+    'database/procedures/sp_get_environment_metrics.sql',
+    'database/procedures/sp_get_house_overview.sql',
 ]
 
 
