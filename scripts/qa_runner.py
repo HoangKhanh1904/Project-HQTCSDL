@@ -615,12 +615,76 @@ def test_28(c):
         require(threw, 'QA28 invalid params must THROW: ' + sql + ' ' + str(args))
 
 
+def test_29(c):
+    # P6: tim kiem phia server — LIKE co escape ky tu dac biet + ket hop phan quyen STAFF.
+    # Cung mau SQL ma route list dung (list_entity / alerts / controls).
+    f = fixture(c)
+    user_b = insert_id(c, """INSERT dbo.Users(UserName,PasswordHash,FullName,Role)
+        OUTPUT inserted.UserID VALUES (?,N'TEST_ONLY',N'QA manager B','STAFF')""", "qa_" + uuid.uuid4().hex)
+    house_b = insert_id(c, """INSERT dbo.SwiftletHouses(HouseName,ManagerId)
+        OUTPUT inserted.HouseId VALUES (N'QA Tim Kiem house B',?)""", user_b)
+    zone_b1 = insert_id(c, """INSERT dbo.Zones(HouseId,ZoneName)
+        OUTPUT inserted.ZoneId VALUES (?,N'QA Tim Kiem Alpha')""", house_b)
+    zone_pct = insert_id(c, """INSERT dbo.Zones(HouseId,ZoneName)
+        OUTPUT inserted.ZoneId VALUES (?,N'QA 100% Zone')""", house_b)
+    zone_us = insert_id(c, """INSERT dbo.Zones(HouseId,ZoneName)
+        OUTPUT inserted.ZoneId VALUES (?,N'QA Zone_X')""", house_b)
+    zone_sp = insert_id(c, """INSERT dbo.Zones(HouseId,ZoneName)
+        OUTPUT inserted.ZoneId VALUES (?,N'QA Zone X')""", house_b)
+    zone_a2 = insert_id(c, """INSERT dbo.Zones(HouseId,ZoneName)
+        OUTPUT inserted.ZoneId VALUES (?,N'QA Tim Kiem Gamma')""", f['house'])
+    zone_off = insert_id(c, """INSERT dbo.Zones(HouseId,ZoneName,Status)
+        OUTPUT inserted.ZoneId VALUES (?,N'QA Tim Kiem Nghi',N'INACTIVE')""", f['house'])
+    dev_b = insert_id(c, """INSERT dbo.Devices(ZoneId,DeviceName,DeviceType)
+        OUTPUT inserted.DeviceId VALUES (?,N'QA Tim Kiem sensor','SENSOR')""", zone_b1)
+    # 1 so do de co ReadingId cho bang Alerts (FK ReadingId NOT NULL).
+    reading_id = insert_id(c, """INSERT dbo.SensorReadings(DeviceId,Temperature,Humidity,RecordeAt)
+        OUTPUT inserted.ReadingId VALUES (?,?,80,'2026-01-15T09:00:00')""", f['device'], 28)
+    c.execute("""INSERT dbo.Alerts(ZoneId,ReadingId,AlertType,Message,Status)
+        VALUES (?,?,N'HIGH_TEMP',N'QA canh bao TIM KIEM mot',N'PENDING')""", zone_a2, reading_id)
+    c.execute("""INSERT dbo.Alerts(ZoneId,ReadingId,AlertType,Message,Status)
+        VALUES (?,?,N'LOW_HUMIDITY',N'QA canh bao khac',N'PENDING')""", zone_a2, reading_id)
+
+    def zone_ids(sql, *args):
+        return {r['ZoneId'] for r in rows(c, sql, *args)}
+
+    # (a) Tim theo ten: 'Tim Kiem' tra ve dung 3 khu (Alpha, Gamma, Nghi).
+    found = zone_ids("SELECT ZoneId FROM dbo.Zones WHERE ZoneName LIKE ?", "%Tim Kiem%")
+    require(found == {zone_b1, zone_a2, zone_off},
+            'QA29 zone search Tim Kiem wrong: ' + str(found))
+    # (b) Escape %: pattern %100[%]% chi lay khu 'QA 100% Zone'.
+    found = zone_ids("SELECT ZoneId FROM dbo.Zones WHERE ZoneName LIKE ?", "%100[%]%")
+    require(found == {zone_pct}, 'QA29 escaped % must match only the percent zone: ' + str(found))
+    # (c) Escape _: pattern %Zone[_]X% chi lay 'QA Zone_X', khong lay 'QA Zone X'.
+    found = zone_ids("SELECT ZoneId FROM dbo.Zones WHERE ZoneName LIKE ?", "%Zone[_]X%")
+    require(found == {zone_us}, 'QA29 escaped _ must match only the underscore zone: ' + str(found))
+    # (d) Tim + phan quyen STAFF: quan ly B chi thay khu cua nha B; quan ly A chi thay khu cua nha A.
+    scoped_b = zone_ids("""SELECT ZoneId FROM dbo.Zones WHERE ZoneName LIKE ?
+        AND HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?)""", "%Tim Kiem%", user_b)
+    require(scoped_b == {zone_b1}, 'QA29 STAFF B search must return only house B zones: ' + str(scoped_b))
+    scoped_a = zone_ids("""SELECT ZoneId FROM dbo.Zones WHERE ZoneName LIKE ?
+        AND HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?)""", "%Tim Kiem%", f['user'])
+    require(scoped_a == {zone_a2, zone_off}, 'QA29 STAFF A search must return only house A zones: ' + str(scoped_a))
+    # (e) Tim + loc Status: ACTIVE loai khu INACTIVE.
+    found = zone_ids("SELECT ZoneId FROM dbo.Zones WHERE ZoneName LIKE ? AND Status=?", "%Tim Kiem%", "ACTIVE")
+    require(found == {zone_b1, zone_a2}, 'QA29 search + ACTIVE must exclude INACTIVE zone: ' + str(found))
+    # (f) Tim canh bao theo noi dung: 'TIM KIEM' 1 dong, 'canh bao' 2 dong.
+    msgs = rows(c, "SELECT AlertId FROM dbo.Alerts WHERE Message LIKE ?", "%TIM KIEM%")
+    require(len(msgs) == 1, 'QA29 alert search TIM KIEM must return 1 row')
+    msgs = rows(c, "SELECT AlertId FROM dbo.Alerts WHERE Message LIKE ?", "%canh bao%")
+    require(len(msgs) == 2, 'QA29 alert search canh bao must return 2 rows')
+    # (g) Tim thiet bi theo ten: 'Tim Kiem' chi lay sensor cua nha B.
+    devs = rows(c, "SELECT DeviceId FROM dbo.Devices WHERE DeviceName LIKE ?", "%Tim Kiem%")
+    require(len(devs) == 1 and devs[0]['DeviceId'] == dev_b,
+            'QA29 device search must return only the B sensor: ' + str(devs))
+
+
 AUTOMATED={
     1:test_01,2:test_02,3:test_03,4:test_04,5:test_05,6:test_06,
     7:test_07,8:test_08,9:test_09,10:test_10,11:test_11,12:test_12,
     13:test_13,14:test_14,15:test_15,16:test_16,17:test_17,18:test_18,
     19:test_19,
-    23:test_23,25:test_25,26:test_26,27:test_27,28:test_28,
+    23:test_23,25:test_25,26:test_26,27:test_27,28:test_28,29:test_29,
 }
 MANUAL={
     20:'Use separate STAFF/ADMIN/Ingest logins; never simulate permissions with an admin connection',
@@ -631,7 +695,7 @@ MANUAL={
 
 
 def main():
-    p=argparse.ArgumentParser(description='TV4 SQL QA (24 automated + 4 NOT TESTED/manual)')
+    p=argparse.ArgumentParser(description='TV4 SQL QA (25 automated + 4 NOT TESTED/manual)')
     p.add_argument('--strict',action='store_true',help='non-zero if any NOT TESTED')
     args=p.parse_args()
     connection_string=os.getenv('QA_CONN_STR')
@@ -653,7 +717,7 @@ def main():
     except Exception as e:
         print('PREFLIGHT FAIL:',type(e).__name__,e,file=sys.stderr)
         return 2
-    for number in range(1,29):
+    for number in range(1,30):
         name=f'QA{number:02d}'
         if number in MANUAL:
             summary['NOT TESTED']+=1

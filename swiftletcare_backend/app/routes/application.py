@@ -46,6 +46,23 @@ def limit():
     return value
 
 
+def search_term():
+    term = request.args.get("q")
+    if term is None:
+        return None
+    term = term.strip()
+    if not term:
+        return None
+    if len(term) > 100:
+        raise ApiError(400, "INVALID_INPUT", "Từ khóa tìm kiếm tối đa 100 ký tự.")
+    return term
+
+
+def like_pattern(term):
+    escaped = term.replace("[", "[[]").replace("%", "[%]").replace("_", "[_]")
+    return "%" + escaped + "%"
+
+
 def period(required=False):
     values = [request.args.get(k) for k in ("from", "to")]
     if not any(values) and not required:
@@ -213,6 +230,13 @@ ENTITIES = {
     ),
 }
 
+# Cot tim kiem theo entity cho tim kiem phia server (list_entity).
+SEARCH_COLUMNS = {
+    "farms": ("HouseName", "Address"),
+    "areas": ("ZoneName", "Description"),
+    "devices": ("DeviceName", "DeviceType"),
+}
+
 
 @bp.get("/api/farms/overview")
 @login_required
@@ -230,6 +254,16 @@ def farms_overview():
 def list_entity(entity):
     if entity not in ENTITIES:
         raise ApiError(404, "NOT_FOUND", "Không tìm thấy API.")
+    status = request.args.get("status")
+    if status:
+        allowed = (
+            {"ACTIVE", "INACTIVE", "MAINTENANCE"}
+            if entity == "devices"
+            else {"ACTIVE", "INACTIVE"}
+        )
+        if status not in allowed:
+            raise ApiError(400, "INVALID_INPUT", "status không hợp lệ.")
+    term = search_term()
     table, key, _, cols = ENTITIES[entity]
     page_no = query_id("page") or 1
     size = limit()
@@ -261,6 +295,16 @@ def list_entity(entity):
                 "ZoneId IN (SELECT ZoneId FROM dbo.Zones WHERE HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?))"
             )
             params.append(g.user["UserID"])
+    if status:
+        conditions.append("Status=?")
+        params.append(status)
+    if term is not None:
+        pattern = like_pattern(term)
+        columns = SEARCH_COLUMNS[entity]
+        conditions.append(
+            "(" + " OR ".join(f"{column} LIKE ?" for column in columns) + ")"
+        )
+        params.extend([pattern] * len(columns))
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     records = db.query(
         f"SELECT {cols} FROM dbo.{table}{where} ORDER BY {key} DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
@@ -397,6 +441,7 @@ def metrics():
 @bp.get("/api/alerts")
 @login_required
 def alerts():
+    term = search_term()
     zone = query_id("zone_id")
     if zone is not None:
         require_zone_access(zone)
@@ -405,6 +450,10 @@ def alerts():
     if session.get("role") == "STAFF" and zone is None:
         sql += " AND ZoneId IN (SELECT ZoneId FROM dbo.Zones WHERE HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?))"
         params.append(g.user["UserID"])
+    if term is not None:
+        sql += " AND (Message LIKE ? OR AlertType LIKE ?)"
+        pattern = like_pattern(term)
+        params.extend([pattern, pattern])
     sql += " ORDER BY CreatedAt DESC,AlertId DESC"
     return ok(db.query(sql, params))
 
@@ -682,11 +731,15 @@ def event_status(event_id):
 @bp.get("/api/controls")
 @login_required
 def controls():
+    term = search_term()
     sql = "SELECT d.DeviceId,d.DeviceName,d.ZoneId,d.DeviceType,s.ControlMode,s.IsOn,s.UpdatedAt FROM dbo.Devices d LEFT JOIN dbo.DeviceControlSettings s ON s.DeviceId=d.DeviceId WHERE d.DeviceType<>'SENSOR'"
     params = []
     if session.get("role") == "STAFF":
         sql += " AND d.ZoneId IN (SELECT ZoneId FROM dbo.Zones WHERE HouseId IN (SELECT HouseId FROM dbo.SwiftletHouses WHERE ManagerId=?))"
         params = [g.user["UserID"]]
+    if term is not None:
+        sql += " AND d.DeviceName LIKE ?"
+        params.append(like_pattern(term))
     sql += " ORDER BY d.DeviceId"
     return ok(db.query(sql, params, timezone="Asia/Ho_Chi_Minh"))
 

@@ -68,6 +68,8 @@
     devices = [],
     managers = [];
   const size = 50;
+  // Debounce o tim kiem: go tiep thi huy hen cu, chi goi load() sau 300ms.
+  let searchTimer = null;
   function message(text, error = false) {
     $("message").textContent = text;
     $("message").classList.toggle("error", error);
@@ -233,8 +235,26 @@
       submit.disabled = true;
       try {
         const data = Object.fromEntries(new FormData(form));
+        data.name = (data.name || "").trim();
+        if (!data.name) {
+          message("Tên không được để trống.", true);
+          return;
+        }
         for (const key of ["manager_id", "house_id", "zone_id"])
           if (key in data) data[key] = Number(data[key]);
+        const pickMessage = {
+          manager_id: "Chọn người quản lý.",
+          house_id: "Chọn nhà yến.",
+          zone_id: "Chọn khu vực.",
+        };
+        for (const [key, msg] of Object.entries(pickMessage))
+          if (
+            key in data &&
+            (!Number.isInteger(data[key]) || data[key] <= 0)
+          ) {
+            message(msg, true);
+            return;
+          }
         await api(
           `/${page}${editing ? "/" + editing : ""}`,
           editing ? "PUT" : "POST",
@@ -287,7 +307,16 @@
           ...(page === "devices" ? [["MAINTENANCE", "Bảo trì"]] : []),
         ],
       });
-      filters.addEventListener("input", () => renderEntity());
+      filters.addEventListener("input", () => {
+        // Farms loc client-side tren toan bo du lieu da tai; areas/devices
+        // goi server (debounce 300ms, ve trang 1).
+        if (page === "farms") return renderEntity();
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          pageNo = 1;
+          load();
+        }, 300);
+      });
       return;
     }
     if (page === "sensors") {
@@ -355,7 +384,11 @@
       });
     }
     if (["alerts", "controls"].includes(page)) {
-      filters.hidden = true;
+      field(filters, "search", "Tìm kiếm", { required: false });
+      filters.addEventListener("input", () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => load(), 300);
+      });
       return;
     }
     filters.append(button("Áp dụng", () => load()));
@@ -403,15 +436,20 @@
   function renderEntity() {
     const c = configs[page],
       f = $("filters");
-    const term = (
-      f.querySelector("[name=search]").value || ""
-    ).toLocaleLowerCase("vi");
-    const status = f.querySelector("[name=status]").value;
-    const records = items.filter(
-      (r) =>
-        (!status || r.Status === status) &&
-        Object.values(r).join(" ").toLocaleLowerCase("vi").includes(term),
-    );
+    // Farms load toan bo nha tu /farms/overview trong 1 lan goi (khong
+    // phan trang) nen loc client-side; areas/devices server da loc.
+    let records = items;
+    if (page === "farms") {
+      const term = (
+        f.querySelector("[name=search]").value || ""
+      ).toLocaleLowerCase("vi");
+      const status = f.querySelector("[name=status]").value;
+      records = items.filter(
+        (r) =>
+          (!status || r.Status === status) &&
+          Object.values(r).join(" ").toLocaleLowerCase("vi").includes(term),
+      );
+    }
     table(c.columns, records, (r) => [
       ...(user.Role === "ADMIN"
         ? [
@@ -433,7 +471,9 @@
         : []),
     ]);
     $("count").textContent =
-      `Trang ${pageNo} · ${records.length}/${items.length} dòng trang này · tổng ${total}`;
+      page === "farms"
+        ? `Trang ${pageNo} · ${records.length}/${items.length} dòng trang này · tổng ${total}`
+        : `Trang ${pageNo} · ${items.length} dòng trang này · tổng ${total}`;
   }
   async function threshold(zoneId) {
     selectedZone = zoneId;
@@ -480,6 +520,35 @@
               .filter(([, v]) => v !== "")
               .map(([k, v]) => [k, Number(v)]),
           );
+          // Kiem tra client-side truoc khi goi API (cung cau chu nhu server).
+          const hasMinLux = data.MinLightLux !== undefined;
+          const hasMaxLux = data.MaxLightLux !== undefined;
+          if (hasMinLux !== hasMaxLux) {
+            message(
+              "Cần gửi cả MinLightLux và MaxLightLux, hoặc bỏ trống cả hai.",
+              true,
+            );
+            return;
+          }
+          if (
+            (data.MinTemperature !== undefined &&
+              data.MaxTemperature !== undefined &&
+              data.MinTemperature > data.MaxTemperature) ||
+            (data.MinHumidity !== undefined &&
+              data.MaxHumidity !== undefined &&
+              data.MinHumidity > data.MaxHumidity)
+          ) {
+            message("Min phải nhỏ hơn hoặc bằng Max.", true);
+            return;
+          }
+          if (
+            hasMinLux &&
+            hasMaxLux &&
+            data.MinLightLux > data.MaxLightLux
+          ) {
+            message("MinLightLux phải nhỏ hơn hoặc bằng MaxLightLux.", true);
+            return;
+          }
           if (rowVersion) data.row_version = rowVersion;
           await api("/thresholds/" + zoneId, rowVersion ? "PUT" : "POST", data);
           await threshold(zoneId);
@@ -656,7 +725,7 @@
         total = rows.length;
         renderEntity();
       } else if (configs[page]) {
-        const d = await api(`/${page}?page=${pageNo}&limit=${size}`);
+        const d = await api(`/${page}?page=${pageNo}&limit=${size}&${params()}`);
         items = d.items;
         total = d.total;
         renderEntity();
@@ -743,7 +812,7 @@
         );
         renderCorrelation();
       } else if (page === "alerts") {
-        items = await api("/alerts?limit=1000");
+        items = await api("/alerts?limit=1000&" + params());
         table(
           [
             ["AlertId", "Mã"],
@@ -803,7 +872,9 @@
                 ],
         );
       } else if (page === "controls") {
-        items = await api("/controls");
+        items = await api(
+          "/controls" + (params().toString() ? "?" + params() : ""),
+        );
         table(
           [
             ["DeviceId", "Mã"],
@@ -829,8 +900,12 @@
               const reading = prompt(
                 "Mã số đo mới nhất của cảm biến cùng khu vực:",
               );
-              if (reading)
-                await control(r, { action: "AUTO", reading_id: reading });
+              if (reading === null) return;
+              if (!/^\d+$/.test(reading) || Number(reading) <= 0) {
+                message("Mã số đo phải là số nguyên dương.", true);
+                return;
+              }
+              await control(r, { action: "AUTO", reading_id: reading });
             }),
           ],
         );
